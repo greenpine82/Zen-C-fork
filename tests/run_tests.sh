@@ -40,8 +40,10 @@ echo "----------------------------------------"
 
 if [ $FAILED -ne 0 ]; then
     echo -e "Failed tests:$FAILED_TESTS"
+    rm -f a.out out.c
     exit 1
 else
     echo "All tests passed!"
+    rm -f a.out out.c
     exit 0
 fi

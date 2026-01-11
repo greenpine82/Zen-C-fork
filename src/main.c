@@ -292,8 +292,8 @@ int main(int argc, char **argv)
         char run_cmd[2048];
         sprintf(run_cmd, "./%s", outfile);
         ret = system(run_cmd);
-        // Clean up executable if temp run?
-        // ZPrep behavior: keeps it.
+        // Clean up executable
+        remove(outfile);
         return ret;
     }
 
