@@ -270,9 +270,9 @@ Zen C allows you to use string literals directly as statements for quick printin
 
 You can embed expressions directly into string literals using `{}` syntax. This works with all printing methods and string shorthands.
 
-```c
-int x = 42;
-char *name = "Zen";
+```zc
+var x = 42;
+var name = "Zen";
 println "Value: {x}, Name: {name}";
 "Value: {x}, Name: {name}"; // shorthand println
 ```
@@ -283,12 +283,10 @@ Zen C supports a shorthand for prompting user input using the `?` prefix.
 
 - `? "Prompt text"`: Prints the prompt (without newline) and waits for input (reads a line).
 - `? "Enter age: " (age)`: Prints prompt and scans input into the variable `age`.
-    - Supports `int`, `float`, `char`, `string` types.
     - Format specifiers are automatically inferred based on variable type.
 
 ```c
-int age;
-? "How old are you? " (age);
+var age = "How old are you? ";
 println "You are {age} years old.";
 ```
 
