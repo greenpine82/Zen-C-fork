@@ -6,801 +6,648 @@
 #include <stdlib.h>
 #include <string.h>
 
-Type *parse_type_base(ParserContext *ctx, Lexer *l)
-{
-    Token t = lexer_peek(l);
+Type *parse_type_base(ParserContext *ctx, Lexer *l) {
+  Token t = lexer_peek(l);
 
-    if (t.type == TOK_IDENT)
-    {
-        // Handle "struct Name" or "enum Name"
-        if ((t.len == 6 && strncmp(t.start, "struct", 6) == 0) ||
-            (t.len == 4 && strncmp(t.start, "enum", 4) == 0))
-        {
-            lexer_next(l); // consume keyword
-            t = lexer_peek(l);
-            if (t.type != TOK_IDENT)
-            {
-                zpanic_at(t, "Expected identifier after struct/enum");
-            }
+  if (t.type == TOK_IDENT) {
+    // Handle "struct Name" or "enum Name"
+    if ((t.len == 6 && strncmp(t.start, "struct", 6) == 0) ||
+        (t.len == 4 && strncmp(t.start, "enum", 4) == 0)) {
+      lexer_next(l); // consume keyword
+      t = lexer_peek(l);
+      if (t.type != TOK_IDENT) {
+        zpanic_at(t, "Expected identifier after struct/enum");
+      }
+    }
+
+    lexer_next(l);
+    char *name = token_strdup(t);
+
+    // Self type alias: Replace "Self" with current impl struct type
+    if (strcmp(name, "Self") == 0 && ctx->current_impl_struct) {
+      name = xstrdup(ctx->current_impl_struct);
+    }
+
+    // Handle Namespace :: (A::B -> A_B)
+    while (lexer_peek(l).type == TOK_DCOLON) {
+      lexer_next(l); // eat ::
+      Token next = lexer_next(l);
+      if (next.type != TOK_IDENT) {
+        zpanic_at(t, "Expected identifier after ::");
+      }
+
+      char *suffix = token_strdup(next);
+      char *resolved_suffix = suffix;
+
+      // Map Zen Primitive suffixes to C types to match Generic Instantiation
+      if (strcmp(suffix, "I32") == 0) {
+        resolved_suffix = "int32_t";
+      } else if (strcmp(suffix, "U32") == 0) {
+        resolved_suffix = "uint32_t";
+      } else if (strcmp(suffix, "I8") == 0) {
+        resolved_suffix = "int8_t";
+      } else if (strcmp(suffix, "U8") == 0) {
+        resolved_suffix = "uint8_t";
+      } else if (strcmp(suffix, "I16") == 0) {
+        resolved_suffix = "int16_t";
+      } else if (strcmp(suffix, "U16") == 0) {
+        resolved_suffix = "uint16_t";
+      } else if (strcmp(suffix, "I64") == 0) {
+        resolved_suffix = "int64_t";
+      } else if (strcmp(suffix, "U64") == 0) {
+        resolved_suffix = "uint64_t";
+      }
+      // Lowercase aliases
+      else if (strcmp(suffix, "i8") == 0) {
+        resolved_suffix = "int8_t";
+      } else if (strcmp(suffix, "u8") == 0) {
+        resolved_suffix = "uint8_t";
+      } else if (strcmp(suffix, "i16") == 0) {
+        resolved_suffix = "int16_t";
+      } else if (strcmp(suffix, "u16") == 0) {
+        resolved_suffix = "uint16_t";
+      } else if (strcmp(suffix, "i32") == 0) {
+        resolved_suffix = "int32_t";
+      } else if (strcmp(suffix, "u32") == 0) {
+        resolved_suffix = "uint32_t";
+      } else if (strcmp(suffix, "i64") == 0) {
+        resolved_suffix = "int64_t";
+      } else if (strcmp(suffix, "u64") == 0) {
+        resolved_suffix = "uint64_t";
+      } else if (strcmp(suffix, "usize") == 0) {
+        resolved_suffix = "size_t";
+      } else if (strcmp(suffix, "string") == 0) {
+        resolved_suffix = "char*";
+      }
+
+      // Check if 'name' is a module alias (e.g., m::Vector)
+      Module *mod = find_module(ctx, name);
+      char *merged;
+      if (mod) {
+        // Module-qualified type: Use module base name
+        merged = xmalloc(strlen(mod->base_name) + strlen(resolved_suffix) + 2);
+        sprintf(merged, "%s_%s", mod->base_name, resolved_suffix);
+      } else {
+        // Regular namespace or enum variant
+        merged = xmalloc(strlen(name) + strlen(resolved_suffix) + 2);
+        sprintf(merged, "%s_%s", name, resolved_suffix);
+      }
+
+      free(name);
+      if (suffix != resolved_suffix) {
+        free(suffix); // Only free if we didn't remap
+      } else {
+        free(suffix);
+      }
+
+      name = merged;
+    }
+
+    // Check for Primitives (Base types)
+    if (strcmp(name, "U0") == 0) {
+      free(name);
+      return type_new(TYPE_VOID);
+    }
+    if (strcmp(name, "u0") == 0) {
+      free(name);
+      return type_new(TYPE_VOID);
+    }
+    if (strcmp(name, "I8") == 0) {
+      free(name);
+      return type_new(TYPE_I8);
+    }
+    if (strcmp(name, "U8") == 0) {
+      free(name);
+      return type_new(TYPE_U8);
+    }
+    if (strcmp(name, "I16") == 0) {
+      free(name);
+      return type_new(TYPE_I16);
+    }
+    if (strcmp(name, "U16") == 0) {
+      free(name);
+      return type_new(TYPE_U16);
+    }
+    if (strcmp(name, "I32") == 0) {
+      free(name);
+      return type_new(TYPE_I32);
+    }
+    if (strcmp(name, "U32") == 0) {
+      free(name);
+      return type_new(TYPE_U32);
+    }
+    if (strcmp(name, "I64") == 0) {
+      free(name);
+      return type_new(TYPE_I64);
+    }
+    if (strcmp(name, "U64") == 0) {
+      free(name);
+      return type_new(TYPE_U64);
+    }
+    if (strcmp(name, "F32") == 0) {
+      free(name);
+      return type_new(TYPE_F32);
+    }
+    if (strcmp(name, "f32") == 0) {
+      free(name);
+      return type_new(TYPE_F32);
+    }
+    if (strcmp(name, "F64") == 0) {
+      free(name);
+      return type_new(TYPE_F64);
+    }
+    if (strcmp(name, "f64") == 0) {
+      free(name);
+      return type_new(TYPE_F64);
+    }
+    if (strcmp(name, "usize") == 0) {
+      free(name);
+      return type_new(TYPE_USIZE);
+    }
+    if (strcmp(name, "isize") == 0) {
+      free(name);
+      return type_new(TYPE_ISIZE);
+    }
+    if (strcmp(name, "byte") == 0) {
+      free(name);
+      return type_new(TYPE_BYTE);
+    }
+    if (strcmp(name, "I128") == 0) {
+      free(name);
+      return type_new(TYPE_I128);
+    }
+    if (strcmp(name, "U128") == 0) {
+      free(name);
+      return type_new(TYPE_U128);
+    }
+    if (strcmp(name, "i8") == 0) {
+      free(name);
+      return type_new(TYPE_I8);
+    }
+    if (strcmp(name, "u8") == 0) {
+      free(name);
+      return type_new(TYPE_U8);
+    }
+    if (strcmp(name, "i16") == 0) {
+      free(name);
+      return type_new(TYPE_I16);
+    }
+    if (strcmp(name, "u16") == 0) {
+      free(name);
+      return type_new(TYPE_U16);
+    }
+    if (strcmp(name, "i32") == 0) {
+      free(name);
+      return type_new(TYPE_I32);
+    }
+    if (strcmp(name, "u32") == 0) {
+      free(name);
+      return type_new(TYPE_U32);
+    }
+    if (strcmp(name, "i64") == 0) {
+      free(name);
+      return type_new(TYPE_I64);
+    }
+    if (strcmp(name, "u64") == 0) {
+      free(name);
+      return type_new(TYPE_U64);
+    }
+    if (strcmp(name, "i128") == 0) {
+      free(name);
+      return type_new(TYPE_I128);
+    }
+    if (strcmp(name, "u128") == 0) {
+      free(name);
+      return type_new(TYPE_U128);
+    }
+    if (strcmp(name, "rune") == 0) {
+      free(name);
+      return type_new(TYPE_RUNE);
+    }
+    if (strcmp(name, "uint") == 0) {
+      free(name);
+      return type_new(TYPE_UINT);
+    }
+
+    if (strcmp(name, "int") == 0) {
+      free(name);
+      return type_new(TYPE_INT);
+    }
+    if (strcmp(name, "float") == 0) {
+      free(name);
+      return type_new(TYPE_F32);
+    }
+    if (strcmp(name, "double") == 0) {
+      free(name);
+      return type_new(TYPE_F64);
+    }
+    if (strcmp(name, "void") == 0) {
+      free(name);
+      return type_new(TYPE_VOID);
+    }
+    if (strcmp(name, "string") == 0) {
+      free(name);
+      return type_new(TYPE_STRING);
+    }
+    if (strcmp(name, "bool") == 0) {
+      free(name);
+      return type_new(TYPE_BOOL);
+    }
+    if (strcmp(name, "char") == 0) {
+      free(name);
+      return type_new(TYPE_CHAR);
+    }
+
+    // Selective imports ONLY apply when we're NOT in a module context
+    if (!ctx->current_module_prefix) {
+      SelectiveImport *si = find_selective_import(ctx, name);
+      if (si) {
+        // This is a selectively imported symbol
+        // Resolve to the actual struct name which was prefixed during module
+        // parsing
+        free(name);
+        name = xmalloc(strlen(si->source_module) + strlen(si->symbol) + 2);
+        sprintf(name, "%s_%s", si->source_module, si->symbol);
+      }
+    }
+
+    // If we're IN a module and no selective import matched, apply module prefix
+    if (ctx->current_module_prefix && !is_known_generic(ctx, name)) {
+      // Auto-prefix struct name if in module context (unless it's a known
+      // primitive/generic)
+      char *prefixed_name =
+          xmalloc(strlen(ctx->current_module_prefix) + strlen(name) + 2);
+      sprintf(prefixed_name, "%s_%s", ctx->current_module_prefix, name);
+      free(name);
+      name = prefixed_name;
+    }
+
+    Type *ty = type_new(TYPE_STRUCT);
+    ty->name = name;
+
+    // Handle Generics <T>
+    if (lexer_peek(l).type == TOK_LANGLE) {
+      lexer_next(l); // eat <
+      Type *arg = parse_type_formal(ctx, l);
+
+      // Handle nested generics like Vec<Vec<int>> where >> is tokenized as one
+      // op
+      Token next_tok = lexer_peek(l);
+      if (next_tok.type == TOK_RANGLE) {
+        lexer_next(l); // Consume >
+      } else if (next_tok.type == TOK_OP && next_tok.len == 2 &&
+                 strncmp(next_tok.start, ">>", 2) == 0) {
+        // Split >> into two > tokens
+        // Consume the first > by advancing lexer manually
+        l->pos += 1;
+        l->col += 1;
+      } else {
+        zpanic_at(t, "Expected > after generic");
+      }
+
+      char *arg_str = type_to_string(arg);
+      instantiate_generic(ctx, name, arg_str, t);
+
+      char *clean_arg = sanitize_mangled_name(arg_str);
+      char mangled[256];
+      sprintf(mangled, "%s_%s", name, clean_arg);
+      free(clean_arg);
+
+      free(ty->name);
+      ty->name = xstrdup(mangled);
+      free(arg_str);
+
+      ty->kind = TYPE_STRUCT;
+      ty->args = NULL;
+      ty->arg_count = 0;
+    }
+    return ty;
+  }
+
+  if (t.type == TOK_LBRACKET) {
+    lexer_next(l); // eat [
+    Type *inner = parse_type_formal(ctx, l);
+
+    // Check for fixed-size array [T; N]
+    if (lexer_peek(l).type == TOK_SEMICOLON) {
+      lexer_next(l); // eat ;
+      Token size_tok = lexer_next(l);
+      int size = 0;
+      if (size_tok.type == TOK_INT) {
+        size = atoi(size_tok.start);
+      } else if (size_tok.type == TOK_IDENT) {
+        // Look up in symbol table for constant propagation
+        char *name = token_strdup(size_tok);
+        Symbol *sym = find_symbol_entry(ctx, name);
+        if (sym && sym->is_const_value) {
+          size = sym->const_int_val;
+          sym->is_used = 1; // MARK AS USED
+        } else {
+          zpanic_at(
+              size_tok,
+              "Array size must be a compile-time constant or integer literal");
         }
+        free(name);
+      } else {
+        zpanic_at(size_tok, "Expected integer for array size");
+      }
+      if (lexer_next(l).type != TOK_RBRACKET) {
+        zpanic_at(lexer_peek(l), "Expected ] after array size");
+      }
 
+      Type *arr = type_new(TYPE_ARRAY);
+      arr->inner = inner;
+      arr->array_size = size;
+      return arr;
+    }
+
+    // Otherwise it's a slice [T]
+    if (lexer_next(l).type != TOK_RBRACKET) {
+      zpanic_at(lexer_peek(l), "Expected ] in type");
+    }
+
+    // Register Slice
+    char *inner_str = type_to_string(inner);
+    register_slice(ctx, inner_str);
+
+    Type *arr = type_new(TYPE_ARRAY);
+    arr->inner = inner;
+    arr->array_size = 0; // 0 means slice, not fixed-size
+    return arr;
+  }
+
+  if (t.type == TOK_LPAREN) {
+    lexer_next(l); // eat (
+    char sig[256];
+    sig[0] = 0;
+
+    while (1) {
+      Type *sub = parse_type_formal(ctx, l);
+      char *s = type_to_string(sub);
+      strcat(sig, s);
+      free(s);
+
+      if (lexer_peek(l).type == TOK_COMMA) {
         lexer_next(l);
-        char *name = token_strdup(t);
-
-        // Self type alias: Replace "Self" with current impl struct type
-        if (strcmp(name, "Self") == 0 && ctx->current_impl_struct)
-        {
-            name = xstrdup(ctx->current_impl_struct);
-        }
-
-        // Handle Namespace :: (A::B -> A_B)
-        while (lexer_peek(l).type == TOK_DCOLON)
-        {
-            lexer_next(l); // eat ::
-            Token next = lexer_next(l);
-            if (next.type != TOK_IDENT)
-            {
-                zpanic_at(t, "Expected identifier after ::");
-            }
-
-            char *suffix = token_strdup(next);
-            char *resolved_suffix = suffix;
-
-            // Map Zen Primitive suffixes to C types to match Generic Instantiation
-            if (strcmp(suffix, "I32") == 0)
-            {
-                resolved_suffix = "int32_t";
-            }
-            else if (strcmp(suffix, "U32") == 0)
-            {
-                resolved_suffix = "uint32_t";
-            }
-            else if (strcmp(suffix, "I8") == 0)
-            {
-                resolved_suffix = "int8_t";
-            }
-            else if (strcmp(suffix, "U8") == 0)
-            {
-                resolved_suffix = "uint8_t";
-            }
-            else if (strcmp(suffix, "I16") == 0)
-            {
-                resolved_suffix = "int16_t";
-            }
-            else if (strcmp(suffix, "U16") == 0)
-            {
-                resolved_suffix = "uint16_t";
-            }
-            else if (strcmp(suffix, "I64") == 0)
-            {
-                resolved_suffix = "int64_t";
-            }
-            else if (strcmp(suffix, "U64") == 0)
-            {
-                resolved_suffix = "uint64_t";
-            }
-            // Lowercase aliases
-            else if (strcmp(suffix, "i8") == 0)
-            {
-                resolved_suffix = "int8_t";
-            }
-            else if (strcmp(suffix, "u8") == 0)
-            {
-                resolved_suffix = "uint8_t";
-            }
-            else if (strcmp(suffix, "i16") == 0)
-            {
-                resolved_suffix = "int16_t";
-            }
-            else if (strcmp(suffix, "u16") == 0)
-            {
-                resolved_suffix = "uint16_t";
-            }
-            else if (strcmp(suffix, "i32") == 0)
-            {
-                resolved_suffix = "int32_t";
-            }
-            else if (strcmp(suffix, "u32") == 0)
-            {
-                resolved_suffix = "uint32_t";
-            }
-            else if (strcmp(suffix, "i64") == 0)
-            {
-                resolved_suffix = "int64_t";
-            }
-            else if (strcmp(suffix, "u64") == 0)
-            {
-                resolved_suffix = "uint64_t";
-            }
-            else if (strcmp(suffix, "usize") == 0)
-            {
-                resolved_suffix = "size_t";
-            }
-            else if (strcmp(suffix, "string") == 0)
-            {
-                resolved_suffix = "char*";
-            }
-
-            // Check if 'name' is a module alias (e.g., m::Vector)
-            Module *mod = find_module(ctx, name);
-            char *merged;
-            if (mod)
-            {
-                // Module-qualified type: Use module base name
-                merged = xmalloc(strlen(mod->base_name) + strlen(resolved_suffix) + 2);
-                sprintf(merged, "%s_%s", mod->base_name, resolved_suffix);
-            }
-            else
-            {
-                // Regular namespace or enum variant
-                merged = xmalloc(strlen(name) + strlen(resolved_suffix) + 2);
-                sprintf(merged, "%s_%s", name, resolved_suffix);
-            }
-
-            free(name);
-            if (suffix != resolved_suffix)
-            {
-                free(suffix); // Only free if we didn't remap
-            }
-            else
-            {
-                free(suffix);
-            }
-
-            name = merged;
-        }
-
-        // Check for Primitives (Base types)
-        if (strcmp(name, "U0") == 0)
-        {
-            free(name);
-            return type_new(TYPE_VOID);
-        }
-        if (strcmp(name, "u0") == 0)
-        {
-            free(name);
-            return type_new(TYPE_VOID);
-        }
-        if (strcmp(name, "I8") == 0)
-        {
-            free(name);
-            return type_new(TYPE_I8);
-        }
-        if (strcmp(name, "U8") == 0)
-        {
-            free(name);
-            return type_new(TYPE_U8);
-        }
-        if (strcmp(name, "I16") == 0)
-        {
-            free(name);
-            return type_new(TYPE_I16);
-        }
-        if (strcmp(name, "U16") == 0)
-        {
-            free(name);
-            return type_new(TYPE_U16);
-        }
-        if (strcmp(name, "I32") == 0)
-        {
-            free(name);
-            return type_new(TYPE_I32);
-        }
-        if (strcmp(name, "U32") == 0)
-        {
-            free(name);
-            return type_new(TYPE_U32);
-        }
-        if (strcmp(name, "I64") == 0)
-        {
-            free(name);
-            return type_new(TYPE_I64);
-        }
-        if (strcmp(name, "U64") == 0)
-        {
-            free(name);
-            return type_new(TYPE_U64);
-        }
-        if (strcmp(name, "F32") == 0)
-        {
-            free(name);
-            return type_new(TYPE_F32);
-        }
-        if (strcmp(name, "f32") == 0)
-        {
-            free(name);
-            return type_new(TYPE_F32);
-        }
-        if (strcmp(name, "F64") == 0)
-        {
-            free(name);
-            return type_new(TYPE_F64);
-        }
-        if (strcmp(name, "f64") == 0)
-        {
-            free(name);
-            return type_new(TYPE_F64);
-        }
-        if (strcmp(name, "usize") == 0)
-        {
-            free(name);
-            return type_new(TYPE_USIZE);
-        }
-        if (strcmp(name, "isize") == 0)
-        {
-            free(name);
-            return type_new(TYPE_ISIZE);
-        }
-        if (strcmp(name, "byte") == 0)
-        {
-            free(name);
-            return type_new(TYPE_BYTE);
-        }
-        if (strcmp(name, "I128") == 0)
-        {
-            free(name);
-            return type_new(TYPE_I128);
-        }
-        if (strcmp(name, "U128") == 0)
-        {
-            free(name);
-            return type_new(TYPE_U128);
-        }
-        if (strcmp(name, "i8") == 0)
-        {
-            free(name);
-            return type_new(TYPE_I8);
-        }
-        if (strcmp(name, "u8") == 0)
-        {
-            free(name);
-            return type_new(TYPE_U8);
-        }
-        if (strcmp(name, "i16") == 0)
-        {
-            free(name);
-            return type_new(TYPE_I16);
-        }
-        if (strcmp(name, "u16") == 0)
-        {
-            free(name);
-            return type_new(TYPE_U16);
-        }
-        if (strcmp(name, "i32") == 0)
-        {
-            free(name);
-            return type_new(TYPE_I32);
-        }
-        if (strcmp(name, "u32") == 0)
-        {
-            free(name);
-            return type_new(TYPE_U32);
-        }
-        if (strcmp(name, "i64") == 0)
-        {
-            free(name);
-            return type_new(TYPE_I64);
-        }
-        if (strcmp(name, "u64") == 0)
-        {
-            free(name);
-            return type_new(TYPE_U64);
-        }
-        if (strcmp(name, "i128") == 0)
-        {
-            free(name);
-            return type_new(TYPE_I128);
-        }
-        if (strcmp(name, "u128") == 0)
-        {
-            free(name);
-            return type_new(TYPE_U128);
-        }
-        if (strcmp(name, "rune") == 0)
-        {
-            free(name);
-            return type_new(TYPE_RUNE);
-        }
-        if (strcmp(name, "uint") == 0)
-        {
-            free(name);
-            return type_new(TYPE_UINT);
-        }
-
-        if (strcmp(name, "int") == 0)
-        {
-            free(name);
-            return type_new(TYPE_INT);
-        }
-        if (strcmp(name, "float") == 0)
-        {
-            free(name);
-            return type_new(TYPE_F32);
-        }
-        if (strcmp(name, "double") == 0)
-        {
-            free(name);
-            return type_new(TYPE_F64);
-        }
-        if (strcmp(name, "void") == 0)
-        {
-            free(name);
-            return type_new(TYPE_VOID);
-        }
-        if (strcmp(name, "string") == 0)
-        {
-            free(name);
-            return type_new(TYPE_STRING);
-        }
-        if (strcmp(name, "bool") == 0)
-        {
-            free(name);
-            return type_new(TYPE_BOOL);
-        }
-        if (strcmp(name, "char") == 0)
-        {
-            free(name);
-            return type_new(TYPE_CHAR);
-        }
-
-        // Selective imports ONLY apply when we're NOT in a module context
-        if (!ctx->current_module_prefix)
-        {
-            SelectiveImport *si = find_selective_import(ctx, name);
-            if (si)
-            {
-                // This is a selectively imported symbol
-                // Resolve to the actual struct name which was prefixed during module
-                // parsing
-                free(name);
-                name = xmalloc(strlen(si->source_module) + strlen(si->symbol) + 2);
-                sprintf(name, "%s_%s", si->source_module, si->symbol);
-            }
-        }
-
-        // If we're IN a module and no selective import matched, apply module prefix
-        if (ctx->current_module_prefix && !is_known_generic(ctx, name))
-        {
-            // Auto-prefix struct name if in module context (unless it's a known
-            // primitive/generic)
-            char *prefixed_name = xmalloc(strlen(ctx->current_module_prefix) + strlen(name) + 2);
-            sprintf(prefixed_name, "%s_%s", ctx->current_module_prefix, name);
-            free(name);
-            name = prefixed_name;
-        }
-
-        Type *ty = type_new(TYPE_STRUCT);
-        ty->name = name;
-
-        // Handle Generics <T>
-        if (lexer_peek(l).type == TOK_LANGLE)
-        {
-            lexer_next(l); // eat <
-            Type *arg = parse_type_formal(ctx, l);
-
-            // Handle nested generics like Vec<Vec<int>> where >> is tokenized as one
-            // op
-            Token next_tok = lexer_peek(l);
-            if (next_tok.type == TOK_RANGLE)
-            {
-                lexer_next(l); // Consume >
-            }
-            else if (next_tok.type == TOK_OP && next_tok.len == 2 &&
-                     strncmp(next_tok.start, ">>", 2) == 0)
-            {
-                // Split >> into two > tokens
-                // Consume the first > by advancing lexer manually
-                l->pos += 1;
-                l->col += 1;
-            }
-            else
-            {
-                zpanic_at(t, "Expected > after generic");
-            }
-
-            char *arg_str = type_to_string(arg);
-            instantiate_generic(ctx, name, arg_str, t);
-
-            char *clean_arg = sanitize_mangled_name(arg_str);
-            char mangled[256];
-            sprintf(mangled, "%s_%s", name, clean_arg);
-            free(clean_arg);
-
-            free(ty->name);
-            ty->name = xstrdup(mangled);
-            free(arg_str);
-
-            ty->kind = TYPE_STRUCT;
-            ty->args = NULL;
-            ty->arg_count = 0;
-        }
-        return ty;
+        strcat(sig, "_");
+      } else {
+        break;
+      }
+    }
+    if (lexer_next(l).type != TOK_RPAREN) {
+      zpanic_at(lexer_peek(l), "Expected ) in tuple");
     }
 
-    if (t.type == TOK_LBRACKET)
-    {
-        lexer_next(l); // eat [
-        Type *inner = parse_type_formal(ctx, l);
+    register_tuple(ctx, sig);
 
-        // Check for fixed-size array [T; N]
-        if (lexer_peek(l).type == TOK_SEMICOLON)
-        {
-            lexer_next(l); // eat ;
-            Token size_tok = lexer_next(l);
-            int size = 0;
-            if (size_tok.type == TOK_INT)
-            {
-                size = atoi(size_tok.start);
-            }
-            else if (size_tok.type == TOK_IDENT)
-            {
-                // Look up in symbol table for constant propagation
-                char *name = token_strdup(size_tok);
-                Symbol *sym = find_symbol_entry(ctx, name);
-                if (sym && sym->is_const_value)
-                {
-                    size = sym->const_int_val;
-                    sym->is_used = 1; // MARK AS USED
-                }
-                else
-                {
-                    zpanic_at(size_tok,
-                              "Array size must be a compile-time constant or integer literal");
-                }
-                free(name);
-            }
-            else
-            {
-                zpanic_at(size_tok, "Expected integer for array size");
-            }
-            if (lexer_next(l).type != TOK_RBRACKET)
-            {
-                zpanic_at(lexer_peek(l), "Expected ] after array size");
-            }
+    char *tuple_name = xmalloc(strlen(sig) + 7);
+    sprintf(tuple_name, "Tuple_%s", sig);
 
-            Type *arr = type_new(TYPE_ARRAY);
-            arr->inner = inner;
-            arr->array_size = size;
-            return arr;
-        }
+    Type *ty = type_new(TYPE_STRUCT);
+    ty->name = tuple_name;
+    return ty;
+  }
 
-        // Otherwise it's a slice [T]
-        if (lexer_next(l).type != TOK_RBRACKET)
-        {
-            zpanic_at(lexer_peek(l), "Expected ] in type");
-        }
-
-        // Register Slice
-        char *inner_str = type_to_string(inner);
-        register_slice(ctx, inner_str);
-
-        Type *arr = type_new(TYPE_ARRAY);
-        arr->inner = inner;
-        arr->array_size = 0; // 0 means slice, not fixed-size
-        return arr;
-    }
-
-    if (t.type == TOK_LPAREN)
-    {
-        lexer_next(l); // eat (
-        char sig[256];
-        sig[0] = 0;
-
-        while (1)
-        {
-            Type *sub = parse_type_formal(ctx, l);
-            char *s = type_to_string(sub);
-            strcat(sig, s);
-            free(s);
-
-            if (lexer_peek(l).type == TOK_COMMA)
-            {
-                lexer_next(l);
-                strcat(sig, "_");
-            }
-            else
-            {
-                break;
-            }
-        }
-        if (lexer_next(l).type != TOK_RPAREN)
-        {
-            zpanic_at(lexer_peek(l), "Expected ) in tuple");
-        }
-
-        register_tuple(ctx, sig);
-
-        char *tuple_name = xmalloc(strlen(sig) + 7);
-        sprintf(tuple_name, "Tuple_%s", sig);
-
-        Type *ty = type_new(TYPE_STRUCT);
-        ty->name = tuple_name;
-        return ty;
-    }
-
-    return type_new(TYPE_UNKNOWN);
+  return type_new(TYPE_UNKNOWN);
 }
 
-Type *parse_type_formal(ParserContext *ctx, Lexer *l)
-{
-    int is_restrict = 0;
-    if (lexer_peek(l).type == TOK_IDENT && lexer_peek(l).len == 8 &&
-        strncmp(lexer_peek(l).start, "restrict", 8) == 0)
-    {
-        lexer_next(l); // eat restrict
-        is_restrict = 1;
+Type *parse_type_formal(ParserContext *ctx, Lexer *l) {
+  int is_restrict = 0;
+  if (lexer_peek(l).type == TOK_IDENT && lexer_peek(l).len == 8 &&
+      strncmp(lexer_peek(l).start, "restrict", 8) == 0) {
+    lexer_next(l); // eat restrict
+    is_restrict = 1;
+  }
+
+  // Example: fn(int, int) -> int
+  if (lexer_peek(l).type == TOK_IDENT &&
+      strncmp(lexer_peek(l).start, "fn", 2) == 0 && lexer_peek(l).len == 2) {
+
+    lexer_next(l); // eat 'fn'
+    Type *fn_type = type_new(TYPE_FUNCTION);
+    fn_type->is_varargs = 0;
+
+    expect(l, TOK_LPAREN, "Expected '(' for function type");
+
+    // Parse Arguments
+    fn_type->arg_count = 0;
+    fn_type->args = NULL;
+
+    while (lexer_peek(l).type != TOK_RPAREN) {
+      Type *arg = parse_type_formal(ctx, l);
+      fn_type->arg_count++;
+      fn_type->args =
+          xrealloc(fn_type->args, sizeof(Type *) * fn_type->arg_count);
+      fn_type->args[fn_type->arg_count - 1] = arg;
+
+      if (lexer_peek(l).type == TOK_COMMA) {
+        lexer_next(l);
+      } else {
+        break;
+      }
+    }
+    expect(l, TOK_RPAREN, "Expected ')' after function args");
+
+    // Parse Return Type (-> Type)
+    if (lexer_peek(l).type == TOK_ARROW) {
+      lexer_next(l);                              // eat ->
+      fn_type->inner = parse_type_formal(ctx, l); // Return type stored in inner
+    } else {
+      fn_type->inner = type_new(TYPE_VOID);
     }
 
-    // Example: fn(int, int) -> int
-    if (lexer_peek(l).type == TOK_IDENT && strncmp(lexer_peek(l).start, "fn", 2) == 0 &&
-        lexer_peek(l).len == 2)
-    {
+    return fn_type;
+  }
 
-        lexer_next(l); // eat 'fn'
-        Type *fn_type = type_new(TYPE_FUNCTION);
-        fn_type->is_varargs = 0;
+  // Handles: int, Struct, Generic<T>, [Slice], (Tuple)
+  Type *t = parse_type_base(ctx, l);
 
-        expect(l, TOK_LPAREN, "Expected '(' for function type");
+  // Handles: T*, T**, etc.
+  while (lexer_peek(l).type == TOK_OP && *lexer_peek(l).start == '*') {
+    lexer_next(l); // consume '*'
+    t = type_new_ptr(t);
+  }
 
-        // Parse Arguments
-        fn_type->arg_count = 0;
-        fn_type->args = NULL;
+  // 4. Handle Array Suffixes (e.g. int[10])
+  while (lexer_peek(l).type == TOK_LBRACKET) {
+    lexer_next(l); // consume '['
 
-        while (lexer_peek(l).type != TOK_RPAREN)
-        {
-            Type *arg = parse_type_formal(ctx, l);
-            fn_type->arg_count++;
-            fn_type->args = xrealloc(fn_type->args, sizeof(Type *) * fn_type->arg_count);
-            fn_type->args[fn_type->arg_count - 1] = arg;
-
-            if (lexer_peek(l).type == TOK_COMMA)
-            {
-                lexer_next(l);
-            }
-            else
-            {
-                break;
-            }
-        }
-        expect(l, TOK_RPAREN, "Expected ')' after function args");
-
-        // Parse Return Type (-> Type)
-        if (lexer_peek(l).type == TOK_ARROW)
-        {
-            lexer_next(l);                              // eat ->
-            fn_type->inner = parse_type_formal(ctx, l); // Return type stored in inner
-        }
-        else
-        {
-            fn_type->inner = type_new(TYPE_VOID);
-        }
-
-        return fn_type;
+    int size = 0;
+    if (lexer_peek(l).type == TOK_INT) {
+      Token t = lexer_peek(l);
+      char buffer[64];
+      int len = t.len < 63 ? t.len : 63;
+      strncpy(buffer, t.start, len);
+      buffer[len] = 0;
+      size = atoi(buffer);
+      lexer_next(l);
     }
 
-    // Handles: int, Struct, Generic<T>, [Slice], (Tuple)
-    Type *t = parse_type_base(ctx, l);
+    expect(l, TOK_RBRACKET, "Expected ']' in array type");
 
-    // Handles: T*, T**, etc.
-    while (lexer_peek(l).type == TOK_OP && *lexer_peek(l).start == '*')
-    {
-        lexer_next(l); // consume '*'
-        t = type_new_ptr(t);
-    }
+    Type *arr = type_new(TYPE_ARRAY);
+    arr->inner = t;
+    arr->array_size = size;
+    t = arr;
+  }
 
-    // 4. Handle Array Suffixes (e.g. int[10])
-    while (lexer_peek(l).type == TOK_LBRACKET)
-    {
-        lexer_next(l); // consume '['
-
-        int size = 0;
-        if (lexer_peek(l).type == TOK_INT)
-        {
-            Token t = lexer_peek(l);
-            char buffer[64];
-            int len = t.len < 63 ? t.len : 63;
-            strncpy(buffer, t.start, len);
-            buffer[len] = 0;
-            size = atoi(buffer);
-            lexer_next(l);
-        }
-
-        expect(l, TOK_RBRACKET, "Expected ']' in array type");
-
-        Type *arr = type_new(TYPE_ARRAY);
-        arr->inner = t;
-        arr->array_size = size;
-        t = arr;
-    }
-
-    if (is_restrict)
-    {
-        t->is_restrict = 1;
-    }
-    return t;
+  if (is_restrict) {
+    t->is_restrict = 1;
+  }
+  return t;
 }
 
-char *parse_type(ParserContext *ctx, Lexer *l)
-{
-    Type *t = parse_type_formal(ctx, l);
+char *parse_type(ParserContext *ctx, Lexer *l) {
+  Type *t = parse_type_formal(ctx, l);
 
-    return type_to_string(t);
+  return type_to_string(t);
 }
 
-char *parse_array_literal(ParserContext *ctx, Lexer *l, const char *st)
-{
-    (void)ctx; // suppress unused parameter warning
-    lexer_next(l);
-    size_t cap = 128;
-    char *c = xmalloc(cap);
-    c[0] = 0;
-    int n = 0;
+char *parse_array_literal(ParserContext *ctx, Lexer *l, const char *st) {
+  (void)ctx; // suppress unused parameter warning
+  lexer_next(l);
+  size_t cap = 128;
+  char *c = xmalloc(cap);
+  c[0] = 0;
+  int n = 0;
 
-    while (1)
-    {
-        Token t = lexer_peek(l);
-        if (t.type == TOK_RBRACKET)
-        {
-            lexer_next(l);
-            break;
-        }
-        if (t.type == TOK_COMMA)
-        {
-            lexer_next(l);
-            continue;
-        }
-
-        const char *s = l->src + l->pos;
-        int d = 0;
-        while (1)
-        {
-            Token it = lexer_peek(l);
-            if (it.type == TOK_EOF)
-            {
-                break;
-            }
-            if (d == 0 && (it.type == TOK_COMMA || it.type == TOK_RBRACKET))
-            {
-                break;
-            }
-            if (it.type == TOK_LBRACKET || it.type == TOK_LPAREN)
-            {
-                d++;
-            }
-            if (it.type == TOK_RBRACKET || it.type == TOK_RPAREN)
-            {
-                d--;
-            }
-            lexer_next(l);
-        }
-
-        int len = (l->src + l->pos) - s;
-        if (strlen(c) + len + 5 > cap)
-        {
-            cap *= 2;
-            c = xrealloc(c, cap);
-        }
-        if (n > 0)
-        {
-            strcat(c, ", ");
-        }
-        strncat(c, s, len);
-        n++;
+  while (1) {
+    Token t = lexer_peek(l);
+    if (t.type == TOK_RBRACKET) {
+      lexer_next(l);
+      break;
+    }
+    if (t.type == TOK_COMMA) {
+      lexer_next(l);
+      continue;
     }
 
-    char rt[64];
-    if (strncmp(st, "Slice_", 6) == 0)
-    {
-        strcpy(rt, st + 6);
-    }
-    else
-    {
-        strcpy(rt, "int");
+    const char *s = l->src + l->pos;
+    int d = 0;
+    while (1) {
+      Token it = lexer_peek(l);
+      if (it.type == TOK_EOF) {
+        break;
+      }
+      if (d == 0 && (it.type == TOK_COMMA || it.type == TOK_RBRACKET)) {
+        break;
+      }
+      if (it.type == TOK_LBRACKET || it.type == TOK_LPAREN) {
+        d++;
+      }
+      if (it.type == TOK_RBRACKET || it.type == TOK_RPAREN) {
+        d--;
+      }
+      lexer_next(l);
     }
 
-    char *o = xmalloc(strlen(c) + 128);
-    sprintf(o, "(%s){.data=(%s[]){%s},.len=%d,.cap=%d}", st, rt, c, n, n);
-    free(c);
-    return o;
+    int len = (l->src + l->pos) - s;
+    if (strlen(c) + len + 5 > cap) {
+      cap *= 2;
+      c = xrealloc(c, cap);
+    }
+    if (n > 0) {
+      strcat(c, ", ");
+    }
+    strncat(c, s, len);
+    n++;
+  }
+
+  char rt[64];
+  if (strncmp(st, "Slice_", 6) == 0) {
+    strcpy(rt, st + 6);
+  } else {
+    strcpy(rt, "int");
+  }
+
+  char *o = xmalloc(strlen(c) + 128);
+  sprintf(o, "(%s){.data=(%s[]){%s},.len=%d,.cap=%d}", st, rt, c, n, n);
+  free(c);
+  return o;
 }
-char *parse_tuple_literal(ParserContext *ctx, Lexer *l, const char *tn)
-{
-    (void)ctx; // suppress unused parameter warning
-    lexer_next(l);
-    size_t cap = 128;
-    char *c = xmalloc(cap);
-    c[0] = 0;
+char *parse_tuple_literal(ParserContext *ctx, Lexer *l, const char *tn) {
+  (void)ctx; // suppress unused parameter warning
+  lexer_next(l);
+  size_t cap = 128;
+  char *c = xmalloc(cap);
+  c[0] = 0;
 
-    while (1)
-    {
-        Token t = lexer_peek(l);
-        if (t.type == TOK_RPAREN)
-        {
-            lexer_next(l);
-            break;
-        }
-        if (t.type == TOK_COMMA)
-        {
-            lexer_next(l);
-            continue;
-        }
-
-        const char *s = l->src + l->pos;
-        int d = 0;
-        while (1)
-        {
-            Token it = lexer_peek(l);
-            if (it.type == TOK_EOF)
-            {
-                break;
-            }
-            if (d == 0 && (it.type == TOK_COMMA || it.type == TOK_RPAREN))
-            {
-                break;
-            }
-            if (it.type == TOK_LPAREN)
-            {
-                d++;
-            }
-            if (it.type == TOK_RPAREN)
-            {
-                d--;
-            }
-            lexer_next(l);
-        }
-
-        int len = (l->src + l->pos) - s;
-        if (strlen(c) + len + 5 > cap)
-        {
-            cap *= 2;
-            c = xrealloc(c, cap);
-        }
-        if (strlen(c) > 0)
-        {
-            strcat(c, ", ");
-        }
-        strncat(c, s, len);
+  while (1) {
+    Token t = lexer_peek(l);
+    if (t.type == TOK_RPAREN) {
+      lexer_next(l);
+      break;
+    }
+    if (t.type == TOK_COMMA) {
+      lexer_next(l);
+      continue;
     }
 
-    char *o = xmalloc(strlen(c) + 128);
-    sprintf(o, "(%s){%s}", tn, c);
-    free(c);
-    return o;
+    const char *s = l->src + l->pos;
+    int d = 0;
+    while (1) {
+      Token it = lexer_peek(l);
+      if (it.type == TOK_EOF) {
+        break;
+      }
+      if (d == 0 && (it.type == TOK_COMMA || it.type == TOK_RPAREN)) {
+        break;
+      }
+      if (it.type == TOK_LPAREN) {
+        d++;
+      }
+      if (it.type == TOK_RPAREN) {
+        d--;
+      }
+      lexer_next(l);
+    }
+
+    int len = (l->src + l->pos) - s;
+    if (strlen(c) + len + 5 > cap) {
+      cap *= 2;
+      c = xrealloc(c, cap);
+    }
+    if (strlen(c) > 0) {
+      strcat(c, ", ");
+    }
+    strncat(c, s, len);
+  }
+
+  char *o = xmalloc(strlen(c) + 128);
+  sprintf(o, "(%s){%s}", tn, c);
+  free(c);
+  return o;
 }
-char *parse_embed(ParserContext *ctx, Lexer *l)
-{
-    lexer_next(l);
-    Token t = lexer_next(l);
-    if (t.type != TOK_STRING)
-    {
-        zpanic_at(t, "String required");
-    }
-    char fn[256];
-    strncpy(fn, t.start + 1, t.len - 2);
-    fn[t.len - 2] = 0;
+char *parse_embed(ParserContext *ctx, Lexer *l) {
+  lexer_next(l);
+  Token t = lexer_next(l);
+  if (t.type != TOK_STRING) {
+    zpanic_at(t, "String required");
+  }
+  char fn[256];
+  strncpy(fn, t.start + 1, t.len - 2);
+  fn[t.len - 2] = 0;
 
-    FILE *f = fopen(fn, "rb");
-    if (!f)
-    {
-        zpanic_at(t, "404: %s", fn);
-    }
-    fseek(f, 0, SEEK_END);
-    long len = ftell(f);
-    rewind(f);
-    unsigned char *b = xmalloc(len);
-    fread(b, 1, len, f);
-    fclose(f);
+  FILE *f = fopen(fn, "rb");
+  if (!f) {
+    zpanic_at(t, "404: %s", fn);
+  }
+  fseek(f, 0, SEEK_END);
+  long len = ftell(f);
+  rewind(f);
+  unsigned char *b = xmalloc(len);
+  fread(b, 1, len, f);
+  fclose(f);
 
-    register_slice(ctx, "char");
-    size_t oc = len * 6 + 128;
-    char *o = xmalloc(oc);
-    sprintf(o, "(Slice_char){.data=(char[]){");
-    char *p = o + strlen(o);
-    for (int i = 0; i < len; i++)
-    {
-        p += sprintf(p, "0x%02X,", b[i]);
-    }
-    sprintf(p, "},.len=%ld,.cap=%ld}", len, len);
-    free(b);
-    return o;
+  register_slice(ctx, "char");
+  size_t oc = len * 6 + 128;
+  char *o = xmalloc(oc);
+  sprintf(o, "(Slice_char){.data=(char[]){");
+  char *p = o + strlen(o);
+  for (int i = 0; i < len; i++) {
+    p += sprintf(p, "0x%02X,", b[i]);
+  }
+  sprintf(p, "},.len=%ld,.cap=%ld}", len, len);
+  free(b);
+  return o;
 }
