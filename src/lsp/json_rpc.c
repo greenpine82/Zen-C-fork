@@ -1,152 +1,9 @@
-
 #include "json_rpc.h"
+#include "cJSON.h"
+#include "lsp_project.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
-
-// Helper to skip whitespace
-const char *skip_ws(const char *p)
-{
-    while (*p && isspace(*p))
-    {
-        p++;
-    }
-    return p;
-}
-
-// Robust JSON string extractor
-// Finds "key" ... : ... "value"
-char *get_json_string(const char *json, const char *key)
-{
-    char key_pattern[256];
-    sprintf(key_pattern, "\"%s\"", key);
-
-    char *p = strstr(json, key_pattern);
-    while (p)
-    {
-        const char *cursor = p + strlen(key_pattern);
-        cursor = skip_ws(cursor);
-        if (*cursor == ':')
-        {
-            cursor++; // skip :
-            cursor = skip_ws(cursor);
-            if (*cursor == '"')
-            {
-                // Found start of value
-                cursor++;
-                const char *start = cursor;
-                // Find end " (handling escapes?)
-                // MVP: just find next " that is not escaped
-                while (*cursor)
-                {
-                    if (*cursor == '"' && *(cursor - 1) != '\\')
-                    {
-                        break;
-                    }
-                    cursor++;
-                }
-
-                int len = cursor - start;
-                char *res = malloc(len + 1);
-                strncpy(res, start, len);
-                res[len] = 0;
-                return res;
-            }
-        }
-        // False positive? Find next
-        p = strstr(p + 1, key_pattern);
-    }
-    return NULL;
-}
-
-// Extract nested "text" from params...
-// Since "text" might be huge and contain anything, we need to be careful.
-char *get_text_content(const char *json)
-{
-    // Search for "text" key
-    char *res = get_json_string(json, "text");
-    if (!res)
-    {
-        return NULL;
-    }
-
-    size_t len = strlen(res);
-    char *unescaped = malloc(len + 1);
-    char *dst = unescaped;
-    char *src = res;
-    while (*src)
-    {
-        if (*src == '\\')
-        {
-            src++;
-            if (*src == 'n')
-            {
-                *dst++ = '\n';
-            }
-            else if (*src == 'r')
-            {
-                *dst++ = '\r';
-            }
-            else if (*src == 't')
-            {
-                *dst++ = '\t';
-            }
-            else if (*src == '"')
-            {
-                *dst++ = '"';
-            }
-            else if (*src == '\\')
-            {
-                *dst++ = '\\';
-            }
-            else
-            {
-                *dst++ = *src;
-            }
-        }
-        else
-        {
-            *dst++ = *src;
-        }
-        src++;
-    }
-    *dst = 0;
-    free(res);
-    return unescaped;
-}
-
-void get_json_position(const char *json, int *line, int *col)
-{
-    // Search for "line" and "character"
-    // Note: they are integers
-
-    char *p = strstr(json, "\"line\"");
-    if (p)
-    {
-        p += 6; // skip "line"
-        p = (char *)skip_ws(p);
-        if (*p == ':')
-        {
-            p++;
-            p = (char *)skip_ws(p);
-            *line = atoi(p);
-        }
-    }
-
-    p = strstr(json, "\"character\"");
-    if (p)
-    {
-        p += 11;
-        p = (char *)skip_ws(p);
-        if (*p == ':')
-        {
-            p++;
-            p = (char *)skip_ws(p);
-            *col = atoi(p);
-        }
-    }
-}
 
 void lsp_check_file(const char *uri, const char *src);
 void lsp_goto_definition(const char *uri, int line, int col);
@@ -156,21 +13,78 @@ void lsp_document_symbol(const char *uri);
 void lsp_references(const char *uri, int line, int col);
 void lsp_signature_help(const char *uri, int line, int col);
 
-#include "lsp_project.h"
+// Helper to extract textDocument params
+static void get_params(cJSON *root, char **uri, int *line, int *col)
+{
+    cJSON *params = cJSON_GetObjectItem(root, "params");
+    if (!params)
+    {
+        return;
+    }
+
+    cJSON *doc = cJSON_GetObjectItem(params, "textDocument");
+    if (doc)
+    {
+        cJSON *u = cJSON_GetObjectItem(doc, "uri");
+        if (u && u->valuestring)
+        {
+            *uri = strdup(u->valuestring);
+        }
+    }
+
+    cJSON *pos = cJSON_GetObjectItem(params, "position");
+    if (pos)
+    {
+        cJSON *l = cJSON_GetObjectItem(pos, "line");
+        cJSON *c = cJSON_GetObjectItem(pos, "character");
+        if (l)
+        {
+            *line = l->valueint;
+        }
+        if (c)
+        {
+            *col = c->valueint;
+        }
+    }
+}
 
 void handle_request(const char *json_str)
 {
-    // Looser method detection
-    if (strstr(json_str, "initialize"))
+    cJSON *json = cJSON_Parse(json_str);
+    if (!json)
     {
-        // Extract rootPath or rootUri
-        char *root = get_json_string(json_str, "rootPath");
-        if (!root)
+        return;
+    }
+
+    cJSON *method_item = cJSON_GetObjectItem(json, "method");
+    if (!method_item || !method_item->valuestring)
+    {
+        cJSON_Delete(json);
+        return;
+    }
+    char *method = method_item->valuestring;
+
+    if (strcmp(method, "initialize") == 0)
+    {
+        cJSON *params = cJSON_GetObjectItem(json, "params");
+        char *root = NULL;
+        if (params)
         {
-            root = get_json_string(json_str, "rootUri");
+            cJSON *rp = cJSON_GetObjectItem(params, "rootPath");
+            if (rp && rp->valuestring)
+            {
+                root = strdup(rp->valuestring);
+            }
+            else
+            {
+                cJSON *ru = cJSON_GetObjectItem(params, "rootUri");
+                if (ru && ru->valuestring)
+                {
+                    root = strdup(ru->valuestring);
+                }
+            }
         }
 
-        // Clean up URI if needed
         if (root && strncmp(root, "file://", 7) == 0)
         {
             char *clean = strdup(root + 7);
@@ -178,119 +92,117 @@ void handle_request(const char *json_str)
             root = clean;
         }
 
+        lsp_project_init(root ? root : ".");
         if (root)
         {
-            lsp_project_init(root);
             free(root);
-        }
-        else
-        {
-            lsp_project_init(".");
         }
 
         const char *response = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{"
                                "\"capabilities\":{\"textDocumentSync\":1,"
                                "\"definitionProvider\":true,\"hoverProvider\":true,"
+                               "\"referencesProvider\":true,\"documentSymbolProvider\":true,"
+                               "\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\"]},"
                                "\"completionProvider\":{"
                                "\"triggerCharacters\":[\".\"]}}}}";
         fprintf(stdout, "Content-Length: %ld\r\n\r\n%s", strlen(response), response);
         fflush(stdout);
-        return;
     }
-
-    if (strstr(json_str, "didOpen") || strstr(json_str, "didChange"))
+    else if (strcmp(method, "textDocument/didOpen") == 0 ||
+             strcmp(method, "textDocument/didChange") == 0)
     {
-        char *uri = get_json_string(json_str, "uri");
-        char *text = get_text_content(json_str);
+        cJSON *params = cJSON_GetObjectItem(json, "params");
+        if (params)
+        {
+            cJSON *doc = cJSON_GetObjectItem(params, "textDocument");
+            if (doc)
+            {
+                cJSON *uri = cJSON_GetObjectItem(doc, "uri");
+                cJSON *text = cJSON_GetObjectItem(doc, "text");
+                // For didChange, text is inside contentChanges
+                if (!text && strcmp(method, "textDocument/didChange") == 0)
+                {
+                    cJSON *changes = cJSON_GetObjectItem(params, "contentChanges");
+                    if (changes && cJSON_GetArraySize(changes) > 0)
+                    {
+                        cJSON *change = cJSON_GetArrayItem(changes, 0);
+                        text = cJSON_GetObjectItem(change, "text");
+                    }
+                }
 
-        if (uri && text)
-        {
-            // fprintf(stderr, "zls: Checking %s\n", uri);
-            lsp_check_file(uri, text);
-        }
-
-        if (uri)
-        {
-            free(uri);
-        }
-        if (text)
-        {
-            free(text);
+                if (uri && uri->valuestring && text && text->valuestring)
+                {
+                    lsp_check_file(uri->valuestring, text->valuestring);
+                }
+            }
         }
     }
-
-    if (strstr(json_str, "textDocument/definition"))
+    else if (strcmp(method, "textDocument/definition") == 0)
     {
-        char *uri = get_json_string(json_str, "uri");
+        char *uri = NULL;
         int line = 0, col = 0;
-        get_json_position(json_str, &line, &col);
-
+        get_params(json, &uri, &line, &col);
         if (uri)
         {
             lsp_goto_definition(uri, line, col);
             free(uri);
         }
     }
-
-    if (strstr(json_str, "textDocument/hover"))
+    else if (strcmp(method, "textDocument/hover") == 0)
     {
-        char *uri = get_json_string(json_str, "uri");
+        char *uri = NULL;
         int line = 0, col = 0;
-        get_json_position(json_str, &line, &col);
-
+        get_params(json, &uri, &line, &col);
         if (uri)
         {
             lsp_hover(uri, line, col);
             free(uri);
         }
     }
-
-    if (strstr(json_str, "textDocument/completion"))
+    else if (strcmp(method, "textDocument/completion") == 0)
     {
-        char *uri = get_json_string(json_str, "uri");
+        char *uri = NULL;
         int line = 0, col = 0;
-        get_json_position(json_str, &line, &col);
-
+        get_params(json, &uri, &line, &col);
         if (uri)
         {
             lsp_completion(uri, line, col);
             free(uri);
         }
     }
-
-    if (strstr(json_str, "textDocument/documentSymbol"))
+    else if (strcmp(method, "textDocument/documentSymbol") == 0)
     {
-        char *uri = get_json_string(json_str, "uri");
+        char *uri = NULL;
+        int line = 0, col = 0; // Unused for outline
+        get_params(json, &uri, &line, &col);
         if (uri)
         {
             lsp_document_symbol(uri);
             free(uri);
         }
     }
-
-    if (strstr(json_str, "textDocument/references"))
+    else if (strcmp(method, "textDocument/references") == 0)
     {
-        char *uri = get_json_string(json_str, "uri");
+        char *uri = NULL;
         int line = 0, col = 0;
-        get_json_position(json_str, &line, &col);
-
+        get_params(json, &uri, &line, &col);
         if (uri)
         {
             lsp_references(uri, line, col);
             free(uri);
         }
     }
-
-    if (strstr(json_str, "textDocument/signatureHelp"))
+    else if (strcmp(method, "textDocument/signatureHelp") == 0)
     {
-        char *uri = get_json_string(json_str, "uri");
+        char *uri = NULL;
         int line = 0, col = 0;
-        get_json_position(json_str, &line, &col);
-
+        get_params(json, &uri, &line, &col);
         if (uri)
         {
             lsp_signature_help(uri, line, col);
             free(uri);
         }
     }
+
+    cJSON_Delete(json);
 }

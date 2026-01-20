@@ -84,12 +84,16 @@ Join the discussion, share demos, ask questions, or report bugs in the official 
         - [Volatile](#volatile)
         - [Named Constraints](#named-constraints)
     - [15. Build Directives](#15-build-directives)
+- [Tooling](#tooling)
+    - [Language Server (LSP)](#language-server-lsp)
+    - [REPL](#repl)
 - [Compiler Support & Compatibility](#compiler-support--compatibility)
     - [Test Suite Status](#test-suite-status)
     - [Building with Zig](#building-with-zig)
     - [C++ Interop](#c-interop)
     - [CUDA Interop](#cuda-interop)
 - [Contributing](#contributing)
+- [Attributions](#attributions)
 
 ---
 
@@ -273,9 +277,10 @@ match shape {
     Rect(w, h) => print(f"Area: {w*h}"),
     Point => print("Point")
 }
+```
 
 #### Reference Binding
-To inspect a value without taking ownership (moving it), use the `ref` keyword in the pattern. This is essential for types that implement Move Semantics (e.g. `Option`, `Result`, non-Copy structs).
+To inspect a value without taking ownership (moving it), use the `ref` keyword in the pattern. This is essential for types that implement Move Semantics (like `Option`, `Result`, non-Copy structs).
 
 ```zc
 var opt = Some(NonCopyVal{...});
@@ -287,7 +292,6 @@ match opt {
     },
     None => {}
 }
-```
 ```
 
 #### Loops
@@ -770,6 +774,72 @@ fn main() { ... }
 
 ---
 
+## Tooling
+
+Zen C provides a built-in Language Server and REPL to enhance the development experience.
+
+### Language Server (LSP)
+
+The Zen C Language Server (LSP) supports standard LSP features for editor integration, providing:
+
+*   **Go to Definition**
+*   **Find References**
+*   **Hover Information**
+*   **Completion** (Function/Struct names, Dot-completion for methods/fields)
+*   **Document Symbols** (Outline)
+*   **Signature Help**
+*   **Diagnostics** (Syntax/Semantic errors)
+
+To start the language server (typically configured in your editor's LSP settings):
+
+```bash
+zc lsp
+```
+
+It communicates via standard I/O (JSON-RPC 2.0).
+
+### REPL
+
+The Read-Eval-Print Loop allows you to experiment with Zen C code interactively.
+
+```bash
+zc repl
+```
+
+#### Features
+
+*   **Interactive Coding**: Type expressions or statements for immediate evaluation.
+*   **Persistent History**: Commands are saved to `~/.zprep_history`.
+*   **Startup Script**: Auto-loads commands from `~/.zprep_init.zc`.
+
+#### Commands
+
+| Command | Description |
+|:---|:---|
+| `:help` | Show available commands. |
+| `:reset` | Clear current session history (variables/functions). |
+| `:vars` | Show active variables. |
+| `:funcs` | Show user-defined functions. |
+| `:structs` | Show user-defined structs. |
+| `:imports` | Show active imports. |
+| `:history` | Show session input history. |
+| `:type <expr>` | Show the type of an expression. |
+| `:c <stmt>` | Show the generated C code for a statement. |
+| `:time <expr>` | Benchmark an expression (runs 1000 iterations). |
+| `:edit [n]` | Edit command `n` (default: last) in `$EDITOR`. |
+| `:save <file>` | Save the current session to a `.zc` file. |
+| `:load <file>` | Load and execute a `.zc` file into the session. |
+| `:watch <expr>` | Watch an expression (re-evaluated after every entry). |
+| `:unwatch <n>` | Remove a watch. |
+| `:undo` | Remove the last command from the session. |
+| `:delete <n>` | Remove command at index `n`. |
+| `:clear` | Clear the screen. |
+| `:quit` | Exit the REPL. |
+| `! <cmd>` | Run a shell command (e.g. `!ls`). |
+
+---
+
+
 ## Compiler Support & Compatibility
 
 Zen C is designed to work with most C11 compilers. Some features rely on GNU C extensions, but these often work in other compilers. Use the `--cc` flag to switch backends.
@@ -966,3 +1036,12 @@ make test
 *   **Parser**: `src/parser/` - Recursive descent parser.
 *   **Codegen**: `src/codegen/` - Transpiler logic (Zen C -> GNU C/C11).
 *   **Standard Library**: `std/` - Written in Zen C itself.
+
+---
+
+## Attributions
+
+This project uses the following third-party libraries:
+
+*   **cJSON** (MIT License): Used for JSON parsing and generation in the Language Server.
+    *   Copyright (c) 2009-2017 Dave Gamble and cJSON contributors

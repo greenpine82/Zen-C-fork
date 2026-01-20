@@ -25,8 +25,23 @@ void lsp_project_init(const char *root_path)
     g_project->ctx = xcalloc(1, sizeof(ParserContext));
     g_project->ctx->is_fault_tolerant = 1;
 
+    // Set a default error handler that just logs to stderr (or ignores)
+    // to prevent exit(1) during initial scan.
+    void lsp_default_on_error(void *data, Token t, const char *msg);
+    g_project->ctx->on_error = lsp_default_on_error;
+
     // Scan workspace
     scan_dir(root_path);
+}
+
+// Default error handler for indexing phase
+void lsp_default_on_error(void *data, Token t, const char *msg)
+{
+    (void)data;
+    // We can log it if we want, but standard zpanic_at already printed it to stderr.
+    // The important thing is that we exist so zpanic_at returns.
+    // Maybe we suppress duplicates or just let it pass.
+    // Since zpanic_at printed "error: ...", we don't need to print again.
 }
 
 static void scan_file(const char *path)
