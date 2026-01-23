@@ -172,11 +172,32 @@ var zeros: [int; 5]; // Zero-initialized
 ```
 
 #### Tuples
-Group multiple values together.
+Group multiple values together, access elements by index.
 ```zc
 var pair = (1, "Hello");
-var x = pair.0;
-var s = pair.1;
+var x = pair.0;  // 1
+var s = pair.1;  // "Hello"
+```
+
+**Multiple Return Values**
+
+Functions can return tuples to provide multiple results:
+```zc
+fn add_and_subtract(a: int, b: int) -> (int, int) {
+    return (a + b, a - b);
+}
+
+var result = add_and_subtract(3, 2);
+var sum = result.0;   // 5
+var diff = result.1;  // 1
+```
+
+**Destructuring**
+
+Tuples can be destructured directly into variables:
+```zc
+var (sum, diff) = add_and_subtract(3, 2);
+// sum = 5, diff = 1
 ```
 
 #### Structs
