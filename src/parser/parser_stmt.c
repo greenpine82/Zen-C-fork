@@ -1413,10 +1413,15 @@ char *process_printf_sugar(ParserContext *ctx, const char *content, int newline,
                     {
                         char *inner_c = NULL;
                         size_t len = 0;
-                        FILE *ms = open_memstream(&inner_c, &len);
+                        FILE *ms = tmpfile();
                         if (ms)
                         {
                             codegen_expression(ctx, expr_node, ms);
+                            len = ftell(ms);
+                            fseek(ms, 0, SEEK_SET);
+                            inner_c = xmalloc(len + 1);
+                            fread(inner_c, 1, len, ms);
+                            inner_c[len] = 0;
                             fclose(ms);
                         }
 
@@ -1443,10 +1448,15 @@ char *process_printf_sugar(ParserContext *ctx, const char *content, int newline,
             {
                 char *buf = NULL;
                 size_t len = 0;
-                FILE *ms = open_memstream(&buf, &len);
+                FILE *ms = tmpfile();
                 if (ms)
                 {
                     codegen_expression(ctx, expr_node, ms);
+                    len = ftell(ms);
+                    fseek(ms, 0, SEEK_SET);
+                    buf = xmalloc(len + 1);
+                    fread(buf, 1, len, ms);
+                    buf[len] = 0;
                     fclose(ms);
                     rw_expr = buf;
                     used_codegen = 1;
