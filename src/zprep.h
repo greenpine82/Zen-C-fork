@@ -8,6 +8,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <sys/types.h>
+#ifndef PATH_MAX
+#define PATH_MAX 260
+#endif
+#define realpath(N, R) _fullpath((R), (N), PATH_MAX)
+#endif
+
 // **ZEN VERSION**
 #define ZEN_VERSION "0.1.0"
 

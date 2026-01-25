@@ -12,10 +12,6 @@
 #include "zprep_plugin.h"
 #include "../codegen/codegen.h"
 
-#ifdef _WIN32
-#define realpath(N, R) _fullpath((R), (N), PATH_MAX)
-#endif
-
 char *curr_func_ret = NULL;
 char *run_comptime_block(ParserContext *ctx, Lexer *l);
 
