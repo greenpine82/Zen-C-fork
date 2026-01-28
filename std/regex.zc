@@ -1,5 +1,4 @@
 include <regex.h>
-include <string.h>
 
 import "./core.zc"
 import "./string.zc"
