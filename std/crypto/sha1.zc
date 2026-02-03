@@ -7,9 +7,6 @@ struct Sha1Digest {
     bytes: u8[20];
 }
 
-extern fn memcpy(dest: void*, src: const void*, n: usize) -> void*;
-extern fn memset(s: void*, c: int, n: usize) -> void*;
-
 struct Sha1 {
     state: u32[5];
     count: u64; // bit count
@@ -26,7 +23,8 @@ impl Sha1 {
         s.state[4] = 0xC3D2E1F0;
         
         s.count = 0;
-        memset(s.buffer, 0, 64);
+        let buf_ptr = &s.buffer[0];
+        raw { memset(buf_ptr, 0, 64); }
         return s;
     }
 
@@ -93,7 +91,10 @@ impl Sha1 {
         self.count = self.count + (len << 3); // Add bits
         
         if ((j + len) > 63) {
-            memcpy(&self.buffer[j], data, 64 - j);
+            let dst = &self.buffer[j];
+            let n1 = 64 - j;
+            raw { memcpy(dst, data, n1); }
+            
             self._transform(&self.buffer[0]);
             
             i = 64 - j;
@@ -106,7 +107,10 @@ impl Sha1 {
              i = 0;
         }
         
-        memcpy(&self.buffer[j], &data[i], len - i);
+        let dst2 = &self.buffer[j];
+        let src2 = &data[i];
+        let n2 = len - i;
+        raw { memcpy(dst2, src2, n2); }
     }
 
     fn final(self) -> Sha1Digest {

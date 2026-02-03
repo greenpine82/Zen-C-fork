@@ -14,10 +14,6 @@ import "../vec.zc"
 struct Dns {
 }
 
-extern fn getaddrinfo(node: const char*, service: const char*, hints: const struct addrinfo*, res: struct addrinfo**) -> int;
-extern fn freeaddrinfo(res: struct addrinfo*) -> void;
-extern fn gai_strerror(errcode: int) -> const char*;
-
 raw {
     // Wrapper to access struct addrinfo fields which might be incomplete in Zen-C struct defs
     // if we tried to define them manually. 

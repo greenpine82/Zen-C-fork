@@ -11,8 +11,6 @@ struct Header {
     value: String;
 }
 
-extern fn snprintf(s: char*, maxlen: usize, format: const char*, ...) -> int;
-
 // Simple helper to parse headers
 fn _parse_headers(lines: Vec<String>, start_idx: usize) -> Vec<Header> {
     let headers = Vec<Header>::new();
@@ -196,7 +194,10 @@ impl Server {
                              }
                              response_str.append_c("Content-Length: ");
                              let len_buf: char[32];
-                             snprintf(len_buf, 32, "%zu", res.body.length());
+                             let _body_len = res.body.length();
+                             raw {
+                                 snprintf(len_buf, 32, "%zu", _body_len);
+                             }
                              response_str.append_c(&len_buf[0]);
                              
                              response_str.append_c("\r\n"); // End Content-Length line
