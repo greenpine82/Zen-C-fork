@@ -719,6 +719,47 @@ void codegen_expression(ParserContext *ctx, ASTNode *node, FILE *out)
             if (node->call.callee->type == NODE_EXPR_VAR)
             {
                 sig = find_func(ctx, node->call.callee->var_ref.name);
+                // Warn about undefined functions (only if no C header imports)
+                if (!sig && !find_struct_def(ctx, node->call.callee->var_ref.name))
+                {
+                    const char *name = node->call.callee->var_ref.name;
+
+                    // Check if project uses C interop (has C imports or stdlib imports)
+                    int has_c_interop = 0;
+
+                    // Check modules for C header imports
+                    Module *mod = ctx->modules;
+                    while (mod && !has_c_interop)
+                    {
+                        if (mod->is_c_header)
+                        {
+                            has_c_interop = 1;
+                        }
+                        mod = mod->next;
+                    }
+
+                    // Check imported_files for stdlib imports (absolute paths)
+                    ImportedFile *file = ctx->imported_files;
+                    while (file && !has_c_interop)
+                    {
+                        if (file->path && strstr(file->path, "/std/"))
+                        {
+                            has_c_interop = 1;
+                        }
+                        file = file->next;
+                    }
+
+                    // Skip internal runtime functions
+                    int is_internal = strncmp(name, "_z_", 3) == 0 || strncmp(name, "_Z", 2) == 0;
+
+                    // Only warn if no C interop and not an internal function
+                    if (!has_c_interop && !is_internal)
+                    {
+                        Token t = node->call.callee->token;
+                        fprintf(stderr, "Warning at %s:%d:%d: Undefined function '%s'\n",
+                                g_current_filename, t.line, t.col, name);
+                    }
+                }
             }
 
             ASTNode *arg = node->call.args;

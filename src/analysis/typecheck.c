@@ -162,6 +162,25 @@ static void check_expr_call(TypeChecker *tc, ASTNode *node)
 {
     check_node(tc, node->call.callee);
 
+    // Check if the function exists (for simple direct calls)
+    if (node->call.callee && node->call.callee->type == NODE_EXPR_VAR)
+    {
+        const char *func_name = node->call.callee->var_ref.name;
+        // Check local scope first, then global symbols
+        ZenSymbol *sym = tc_lookup(tc, func_name);
+        if (!sym)
+        {
+            // Check global parser context for functions
+            ZenSymbol *global_sym = find_symbol_in_all(tc->pctx, func_name);
+            if (!global_sym)
+            {
+                char msg[256];
+                snprintf(msg, 255, "Undefined function '%s'", func_name);
+                tc_error(tc, node->call.callee->token, msg);
+            }
+        }
+    }
+
     // Check arguments
     ASTNode *arg = node->call.args;
     while (arg)
@@ -341,7 +360,23 @@ static void check_node(TypeChecker *tc, ASTNode *node)
         {
             check_node(tc, node->ret.value);
         }
+        // Check return type compatibility with function
+        if (tc->current_func)
+        {
+            const char *ret_type = tc->current_func->func.ret_type;
+            int func_is_void = !ret_type || strcmp(ret_type, "void") == 0;
 
+            if (func_is_void && node->ret.value)
+            {
+                tc_error(tc, node->token, "Return with value in void function");
+            }
+            else if (!func_is_void && !node->ret.value)
+            {
+                char msg[256];
+                snprintf(msg, 255, "Return without value in function returning '%s'", ret_type);
+                tc_error(tc, node->token, msg);
+            }
+        }
         break;
 
     // Control flow with nested nodes.
