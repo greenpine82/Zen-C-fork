@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 // Forward decl for LSP
@@ -285,9 +286,13 @@ int main(int argc, char **argv)
     }
     g_parser_ctx = &ctx;
 
+    struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
     if (!g_config.quiet)
     {
-        printf("[zc] Compiling %s...\n", g_config.input_file);
+        printf(COLOR_BOLD COLOR_GREEN "   Compiling" COLOR_RESET " %s\n", g_config.input_file);
+        fflush(stdout);
     }
 
     ASTNode *root = parse_program(&ctx, &l);
@@ -348,14 +353,14 @@ int main(int argc, char **argv)
             }
             if (!g_config.quiet)
             {
-                printf("[zc] Transpiled to %s\n", g_config.output_file);
+                printf(COLOR_BOLD COLOR_CYAN "  Transpiled" COLOR_RESET " to %s\n", g_config.output_file);
             }
         }
         else
         {
             if (!g_config.quiet)
             {
-                printf("[zc] Transpiled to %s\n", temp_source_file);
+                printf(COLOR_BOLD COLOR_CYAN "  Transpiled" COLOR_RESET " to %s\n", temp_source_file);
             }
         }
         // Done, no C compilation
@@ -419,6 +424,11 @@ int main(int argc, char **argv)
         {
             sprintf(run_cmd, "./%s", outfile);
         }
+        if (!g_config.quiet)
+        {
+             printf(COLOR_BOLD COLOR_GREEN "     Running" COLOR_RESET " %s\n", outfile);
+             fflush(stdout);
+        }
         ret = system(run_cmd);
         remove(outfile);
         zptr_plugin_mgr_cleanup();
@@ -432,5 +442,23 @@ int main(int argc, char **argv)
 
     zptr_plugin_mgr_cleanup();
     zen_trigger_global();
+    
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    double time_taken = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+    
+    if (!g_config.quiet && !g_config.mode_run && !g_config.mode_check)
+    {
+        if (g_warning_count > 0)
+        {
+            printf(COLOR_BOLD COLOR_GREEN "    Finished" COLOR_RESET " build in %.2fs with %d warning%s\n",
+                   time_taken, g_warning_count, g_warning_count == 1 ? "" : "s");
+        }
+        else
+        {
+            printf(COLOR_BOLD COLOR_GREEN "    Finished" COLOR_RESET " build in %.2fs\n", time_taken);
+        }
+        fflush(stdout);
+    }
+
     return 0;
 }
