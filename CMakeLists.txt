@@ -136,7 +136,7 @@ install(DIRECTORY ${CMAKE_BINARY_DIR}/plugins/ DESTINATION lib/zenc/plugins
 
 # Test target
 add_custom_target(test
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_tests.sh
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/scripts/run_tests.sh
     DEPENDS zc
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
