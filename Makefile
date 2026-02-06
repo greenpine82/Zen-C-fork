@@ -52,6 +52,7 @@ SRCS = src/main.c \
        src/lsp/cJSON.c \
        src/zen/zen_facts.c \
        src/repl/repl.c \
+       src/repl/repl_os.c \
        src/plugins/plugin_manager.c
 
 OBJ_DIR = obj

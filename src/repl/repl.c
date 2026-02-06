@@ -1,13 +1,11 @@
-
 #include "repl.h"
 #include "ast.h"
 #include "parser/parser.h"
 #include "zprep.h"
+#include "repl_os.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <termios.h>
-#include <unistd.h>
 #include <ctype.h>
 
 ASTNode *parse_program(ParserContext *ctx, Lexer *l);
@@ -74,35 +72,7 @@ static void repl_error_callback(void *data, Token t, const char *msg)
     fprintf(stderr, "\033[1;31merror:\033[0m %s\n", msg);
 }
 
-static struct termios orig_termios;
-static int raw_mode_enabled = 0;
-
-static void disable_raw_mode()
-{
-    if (raw_mode_enabled)
-    {
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
-        raw_mode_enabled = 0;
-    }
-}
-
-static void enable_raw_mode()
-{
-    if (!raw_mode_enabled)
-    {
-        tcgetattr(STDIN_FILENO, &orig_termios);
-        atexit(disable_raw_mode);
-        struct termios raw = orig_termios;
-        raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
-        raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-        raw.c_oflag &= ~(OPOST);
-        raw.c_cflag |= (CS8);
-        raw.c_cc[VMIN] = 1;
-        raw.c_cc[VTIME] = 0;
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
-        raw_mode_enabled = 1;
-    }
-}
+// Raw mode functions are now in repl_os.c
 
 static const char *KEYWORDS[] = {
     "fn",       "struct",  "var",   "let",   "def",    "const",    "return",  "if",
@@ -525,7 +495,7 @@ static char *repl_complete(const char *buf, int pos)
 
 static char *repl_readline(const char *prompt, char **history, int history_len, int indent_level)
 {
-    enable_raw_mode();
+    repl_enable_raw_mode();
 
     int buf_size = 1024;
     char *buf = malloc(buf_size);
@@ -563,7 +533,7 @@ static char *repl_readline(const char *prompt, char **history, int history_len, 
     while (1)
     {
         char c;
-        if (read(STDIN_FILENO, &c, 1) != 1)
+        if (!repl_read_char(&c))
         {
             break;
         }
@@ -571,11 +541,11 @@ static char *repl_readline(const char *prompt, char **history, int history_len, 
         if (c == '\x1b')
         {
             char seq[3];
-            if (read(STDIN_FILENO, &seq[0], 1) != 1)
+            if (!repl_read_char(&seq[0]))
             {
                 continue;
             }
-            if (read(STDIN_FILENO, &seq[1], 1) != 1)
+            if (!repl_read_char(&seq[1]))
             {
                 continue;
             }
@@ -677,7 +647,7 @@ static char *repl_readline(const char *prompt, char **history, int history_len, 
             {
                 free(saved_current_line);
             }
-            disable_raw_mode();
+            repl_disable_raw_mode();
             return strdup("");
         }
         else if (c == 4)
@@ -689,7 +659,7 @@ static char *repl_readline(const char *prompt, char **history, int history_len, 
                 {
                     free(saved_current_line);
                 }
-                disable_raw_mode();
+                repl_disable_raw_mode();
                 return NULL;
             }
         }
@@ -864,7 +834,7 @@ static char *repl_readline(const char *prompt, char **history, int history_len, 
             {
                 free(saved_current_line);
             }
-            disable_raw_mode();
+            repl_disable_raw_mode();
             return strdup(":reset");
         }
         else if (!iscntrl(c))
@@ -906,7 +876,7 @@ static char *repl_readline(const char *prompt, char **history, int history_len, 
     {
         free(saved_current_line);
     }
-    disable_raw_mode();
+    repl_disable_raw_mode();
 
     return buf;
 }
@@ -1116,16 +1086,16 @@ void run_repl(const char *self_path)
 
         if (NULL == input_buffer)
         {
-            size_t len = strlen(line_buf);
+            size_t cmd_len = strlen(line_buf);
             char cmd_buf[1024];
             strcpy(cmd_buf, line_buf);
-            if (len > 0 && cmd_buf[len - 1] == '\n')
+            if (cmd_len > 0 && cmd_buf[cmd_len - 1] == '\n')
             {
-                cmd_buf[--len] = 0;
+                cmd_buf[--cmd_len] = 0;
             }
-            while (len > 0 && (cmd_buf[len - 1] == ' ' || cmd_buf[len - 1] == '\t'))
+            while (cmd_len > 0 && (cmd_buf[cmd_len - 1] == ' ' || cmd_buf[cmd_len - 1] == '\t'))
             {
-                cmd_buf[--len] = 0;
+                cmd_buf[--cmd_len] = 0;
             }
 
             if (0 == strcmp(cmd_buf, "exit") || 0 == strcmp(cmd_buf, "quit"))
@@ -1875,8 +1845,14 @@ void run_repl(const char *self_path)
                 }
                 else if (0 == strncmp(cmd_buf, ":time ", 6))
                 {
+                    if (z_is_windows())
+                    {
+                        printf("Command ':time' is not supported on Windows yet.\n");
+                        continue;
+                    }
                     // Benchmark an expression.
                     char *expr = cmd_buf + 6;
+                    // ... (rest of :time implementation)
 
                     char *global_code = NULL;
                     char *main_code = NULL;
@@ -1932,6 +1908,12 @@ void run_repl(const char *self_path)
                 }
                 else if (0 == strncmp(cmd_buf, ":c ", 3))
                 {
+                    if (z_is_windows())
+                    {
+                        printf("Command ':c' (transpile inspection) is not supported on Windows "
+                               "yet.\n");
+                        continue;
+                    }
                     char *expr_buf = malloc(8192);
                     strcpy(expr_buf, cmd_buf + 3);
 
@@ -2194,307 +2176,317 @@ void run_repl(const char *self_path)
                     }
                     if (!found)
                     {
-                        char man_cmd[256];
-                        sprintf(man_cmd,
-                                "man 3 %s 2>/dev/null | sed -n '/^SYNOPSIS/,/^[A-Z]/p' | "
-                                "head -10",
+                        if (z_is_windows())
+                        {
+                            printf(
+                                "No documentation for '%s'. (Man pages not available on Windows)\n",
                                 sym);
-                        FILE *mp = popen(man_cmd, "r");
-                        if (mp)
+                        }
+                        else
                         {
-                            char buf[256];
-                            int lines = 0;
-                            while (fgets(buf, sizeof(buf), mp) && lines < 8)
+                            char man_cmd[256];
+                            sprintf(man_cmd,
+                                    "man 3 %s 2>/dev/null | sed -n '/^SYNOPSIS/,/^[A-Z]/p' | "
+                                    "head -10",
+                                    sym);
+                            FILE *mp = popen(man_cmd, "r");
+                            if (mp)
                             {
-                                printf("%s", buf);
-                                lines++;
+                                char buf[256];
+                                int lines = 0;
+                                while (fgets(buf, sizeof(buf), mp) && lines < 8)
+                                {
+                                    printf("%s", buf);
+                                    lines++;
+                                }
+                                int status = pclose(mp);
+                                if (0 == status && lines > 0)
+                                {
+                                    found = 1;
+                                    printf("\033[90m(man 3 %s)\033[0m\n", sym);
+                                }
                             }
-                            int status = pclose(mp);
-                            if (0 == status && lines > 0)
+                            if (!found)
                             {
-                                found = 1;
-                                printf("\033[90m(man 3 %s)\033[0m\n", sym);
+                                printf("No documentation for '%s'.\n", sym);
                             }
                         }
-                        if (!found)
-                        {
-                            printf("No documentation for '%s'.\n", sym);
-                        }
+                        continue;
                     }
+                    else
+                    {
+                        printf("Unknown command: %s\n", cmd_buf);
+                        continue;
+                    }
+                }
+            }
+
+            int in_quote = 0;
+            int escaped = 0;
+            for (int i = 0; line_buf[i]; i++)
+            {
+                char c = line_buf[i];
+                if (escaped)
+                {
+                    escaped = 0;
                     continue;
                 }
-                else
+                if (c == '\\')
                 {
-                    printf("Unknown command: %s\n", cmd_buf);
+                    escaped = 1;
                     continue;
                 }
-            }
-        }
+                if (c == '"')
+                {
+                    in_quote = !in_quote;
+                    continue;
+                }
 
-        int in_quote = 0;
-        int escaped = 0;
-        for (int i = 0; line_buf[i]; i++)
-        {
-            char c = line_buf[i];
-            if (escaped)
+                if (!in_quote)
+                {
+                    if (c == '{')
+                    {
+                        brace_depth++;
+                    }
+                    if (c == '}')
+                    {
+                        brace_depth--;
+                    }
+                    if (c == '(')
+                    {
+                        paren_depth++;
+                    }
+                    if (c == ')')
+                    {
+                        paren_depth--;
+                    }
+                }
+            }
+
+            size_t len = strlen(line_buf);
+            input_buffer = realloc(input_buffer, input_len + len + 1);
+            strcpy(input_buffer + input_len, line_buf);
+            input_len += len;
+
+            if (brace_depth > 0 || paren_depth > 0)
             {
-                escaped = 0;
                 continue;
             }
-            if (c == '\\')
+
+            if (input_len > 0 && input_buffer[input_len - 1] == '\n')
             {
-                escaped = 1;
+                input_buffer[--input_len] = 0;
+            }
+
+            if (input_len == 0)
+            {
+                free(input_buffer);
+                input_buffer = NULL;
+                input_len = 0;
+                brace_depth = 0;
+                paren_depth = 0;
                 continue;
             }
-            if (c == '"')
+
+            if (history_len >= history_cap)
             {
-                in_quote = !in_quote;
-                continue;
+                history_cap *= 2;
+                history = realloc(history, history_cap * sizeof(char *));
             }
+            history[history_len++] = strdup(input_buffer);
 
-            if (!in_quote)
-            {
-                if (c == '{')
-                {
-                    brace_depth++;
-                }
-                if (c == '}')
-                {
-                    brace_depth--;
-                }
-                if (c == '(')
-                {
-                    paren_depth++;
-                }
-                if (c == ')')
-                {
-                    paren_depth--;
-                }
-            }
-        }
-
-        size_t len = strlen(line_buf);
-        input_buffer = realloc(input_buffer, input_len + len + 1);
-        strcpy(input_buffer + input_len, line_buf);
-        input_len += len;
-
-        if (brace_depth > 0 || paren_depth > 0)
-        {
-            continue;
-        }
-
-        if (input_len > 0 && input_buffer[input_len - 1] == '\n')
-        {
-            input_buffer[--input_len] = 0;
-        }
-
-        if (input_len == 0)
-        {
             free(input_buffer);
             input_buffer = NULL;
             input_len = 0;
             brace_depth = 0;
             paren_depth = 0;
-            continue;
-        }
 
-        if (history_len >= history_cap)
-        {
-            history_cap *= 2;
-            history = realloc(history, history_cap * sizeof(char *));
-        }
-        history[history_len++] = strdup(input_buffer);
+            char *global_code = NULL;
+            char *main_code = NULL;
+            repl_get_code(history, history_len, &global_code, &main_code);
 
-        free(input_buffer);
-        input_buffer = NULL;
-        input_len = 0;
-        brace_depth = 0;
-        paren_depth = 0;
-
-        char *global_code = NULL;
-        char *main_code = NULL;
-        repl_get_code(history, history_len, &global_code, &main_code);
-
-        size_t total_size = strlen(global_code) + strlen(main_code) + 4096;
-        if (watches_len > 0)
-        {
-            total_size += 16 * 1024;
-        }
-
-        char *full_code = malloc(total_size);
-        sprintf(full_code, "%s\nfn main() { _z_suppress_stdout(); %s", global_code, main_code);
-        free(global_code);
-        free(main_code);
-
-        strcat(full_code, "_z_restore_stdout(); ");
-
-        if (history_len > 0 && !is_header_line(history[history_len - 1]))
-        {
-            char *last_line = history[history_len - 1];
-
-            char *check_buf = malloc(strlen(last_line) + 2);
-            strcpy(check_buf, last_line);
-            strcat(check_buf, ";");
-
-            ParserContext ctx = {0};
-            ctx.is_repl = 1;
-            ctx.skip_preamble = 1;
-            ctx.is_fault_tolerant = 1;
-            ctx.on_error = repl_error_callback;
-            Lexer l;
-            lexer_init(&l, check_buf);
-            ASTNode *node = parse_statement(&ctx, &l);
-            free(check_buf);
-
-            int is_expr = 0;
-            if (node)
+            size_t total_size = strlen(global_code) + strlen(main_code) + 4096;
+            if (watches_len > 0)
             {
-                ASTNode *child = node;
-                if (child->type == NODE_EXPR_BINARY || child->type == NODE_EXPR_UNARY ||
-                    child->type == NODE_EXPR_LITERAL || child->type == NODE_EXPR_VAR ||
-                    child->type == NODE_EXPR_CALL || child->type == NODE_EXPR_MEMBER ||
-                    child->type == NODE_EXPR_INDEX || child->type == NODE_EXPR_CAST ||
-                    child->type == NODE_EXPR_SIZEOF || child->type == NODE_EXPR_STRUCT_INIT ||
-                    child->type == NODE_EXPR_ARRAY_LITERAL || child->type == NODE_EXPR_SLICE ||
-                    child->type == NODE_TERNARY || child->type == NODE_MATCH)
-                {
-                    is_expr = 1;
-                }
+                total_size += 16 * 1024;
             }
 
-            if (is_expr)
+            char *full_code = malloc(total_size);
+            sprintf(full_code, "%s\nfn main() { _z_suppress_stdout(); %s", global_code, main_code);
+            free(global_code);
+            free(main_code);
+
+            strcat(full_code, "_z_restore_stdout(); ");
+
+            if (history_len > 0 && !is_header_line(history[history_len - 1]))
             {
-                char *global_code = NULL;
-                char *main_code = NULL;
-                repl_get_code(history, history_len - 1, &global_code, &main_code);
+                char *last_line = history[history_len - 1];
 
-                size_t probesz = strlen(global_code) + strlen(main_code) + strlen(last_line) + 4096;
-                char *probe_code = malloc(probesz);
+                char *check_buf = malloc(strlen(last_line) + 2);
+                strcpy(check_buf, last_line);
+                strcat(check_buf, ";");
 
-                sprintf(probe_code, "%s\nfn main() { _z_suppress_stdout(); %s", global_code,
-                        main_code);
-                free(global_code);
-                free(main_code);
+                ParserContext ctx = {0};
+                ctx.is_repl = 1;
+                ctx.skip_preamble = 1;
+                ctx.is_fault_tolerant = 1;
+                ctx.on_error = repl_error_callback;
+                Lexer l;
+                lexer_init(&l, check_buf);
+                ASTNode *node = parse_statement(&ctx, &l);
+                free(check_buf);
 
-                strcat(probe_code, " raw { typedef struct { int _u; } __REVEAL_TYPE__; } ");
-                strcat(probe_code, " var _z_type_probe: __REVEAL_TYPE__; _z_type_probe = (");
-                strcat(probe_code, last_line);
-                strcat(probe_code, "); }");
-
-                char p_path[256];
-                sprintf(p_path, "/tmp/zprep_repl_probe_%d.zc", rand());
-                FILE *pf = fopen(p_path, "w");
-                if (pf)
+                int is_expr = 0;
+                if (node)
                 {
-                    fprintf(pf, "%s", probe_code);
-                    fclose(pf);
-
-                    char p_cmd[2048];
-                    sprintf(p_cmd, "%s run -q %s 2>&1", self_path, p_path);
-
-                    FILE *pp = popen(p_cmd, "r");
-                    int is_void = 0;
-                    if (pp)
+                    ASTNode *child = node;
+                    if (child->type == NODE_EXPR_BINARY || child->type == NODE_EXPR_UNARY ||
+                        child->type == NODE_EXPR_LITERAL || child->type == NODE_EXPR_VAR ||
+                        child->type == NODE_EXPR_CALL || child->type == NODE_EXPR_MEMBER ||
+                        child->type == NODE_EXPR_INDEX || child->type == NODE_EXPR_CAST ||
+                        child->type == NODE_EXPR_SIZEOF || child->type == NODE_EXPR_STRUCT_INIT ||
+                        child->type == NODE_EXPR_ARRAY_LITERAL || child->type == NODE_EXPR_SLICE ||
+                        child->type == NODE_TERNARY || child->type == NODE_MATCH)
                     {
-                        char buf[1024];
-                        while (fgets(buf, sizeof(buf), pp))
-                        {
-                            if (strstr(buf, "void") && strstr(buf, "expression"))
-                            {
-                                is_void = 1;
-                            }
-                        }
-                        pclose(pp);
+                        is_expr = 1;
                     }
+                }
 
-                    if (!is_void)
+                if (is_expr)
+                {
+                    char *global_code = NULL;
+                    char *main_code = NULL;
+                    repl_get_code(history, history_len - 1, &global_code, &main_code);
+
+                    size_t probesz =
+                        strlen(global_code) + strlen(main_code) + strlen(last_line) + 4096;
+                    char *probe_code = malloc(probesz);
+
+                    sprintf(probe_code, "%s\nfn main() { _z_suppress_stdout(); %s", global_code,
+                            main_code);
+                    free(global_code);
+                    free(main_code);
+
+                    strcat(probe_code, " raw { typedef struct { int _u; } __REVEAL_TYPE__; } ");
+                    strcat(probe_code, " var _z_type_probe: __REVEAL_TYPE__; _z_type_probe = (");
+                    strcat(probe_code, last_line);
+                    strcat(probe_code, "); }");
+
+                    char p_path[256];
+                    sprintf(p_path, "/tmp/zprep_repl_probe_%d.zc", rand());
+                    FILE *pf = fopen(p_path, "w");
+                    if (pf)
                     {
-                        strcat(full_code, "println \"{");
-                        strcat(full_code, last_line);
-                        strcat(full_code, "}\";");
+                        fprintf(pf, "%s", probe_code);
+                        fclose(pf);
+
+                        char p_cmd[2048];
+                        sprintf(p_cmd, "%s run -q %s 2>&1", self_path, p_path);
+
+                        FILE *pp = popen(p_cmd, "r");
+                        int is_void = 0;
+                        if (pp)
+                        {
+                            char buf[1024];
+                            while (fgets(buf, sizeof(buf), pp))
+                            {
+                                if (strstr(buf, "void") && strstr(buf, "expression"))
+                                {
+                                    is_void = 1;
+                                }
+                            }
+                            pclose(pp);
+                        }
+
+                        if (!is_void)
+                        {
+                            strcat(full_code, "println \"{");
+                            strcat(full_code, last_line);
+                            strcat(full_code, "}\";");
+                        }
+                        else
+                        {
+                            strcat(full_code, last_line);
+                        }
                     }
                     else
                     {
                         strcat(full_code, last_line);
                     }
+                    free(probe_code);
                 }
                 else
                 {
                     strcat(full_code, last_line);
                 }
-                free(probe_code);
             }
-            else
+
+            if (watches_len > 0)
             {
-                strcat(full_code, last_line);
+                strcat(full_code, "; ");
+                for (int i = 0; i < watches_len; i++)
+                {
+                    char wbuf[1024];
+                    sprintf(wbuf,
+                            "printf(\"\\033[90mwatch:%s = \\033[0m\"); print \"{%s}\"; "
+                            "printf(\"\\n\"); ",
+                            watches[i], watches[i]);
+                    strcat(full_code, wbuf);
+                }
             }
-        }
 
-        if (watches_len > 0)
-        {
-            strcat(full_code, "; ");
-            for (int i = 0; i < watches_len; i++)
+            strcat(full_code, " }");
+
+            char tmp_path[256];
+            sprintf(tmp_path, "/tmp/zprep_repl_%d.zc", rand());
+            FILE *f = fopen(tmp_path, "w");
+            if (!f)
             {
-                char wbuf[1024];
-                sprintf(wbuf,
-                        "printf(\"\\033[90mwatch:%s = \\033[0m\"); print \"{%s}\"; "
-                        "printf(\"\\n\"); ",
-                        watches[i], watches[i]);
-                strcat(full_code, wbuf);
+                printf("Error: Cannot write temp file\n");
+                free(full_code);
+                break;
             }
-        }
-
-        strcat(full_code, " }");
-
-        char tmp_path[256];
-        sprintf(tmp_path, "/tmp/zprep_repl_%d.zc", rand());
-        FILE *f = fopen(tmp_path, "w");
-        if (!f)
-        {
-            printf("Error: Cannot write temp file\n");
+            fprintf(f, "%s", full_code);
+            fclose(f);
             free(full_code);
-            break;
-        }
-        fprintf(f, "%s", full_code);
-        fclose(f);
-        free(full_code);
 
-        char cmd[2048];
-        sprintf(cmd, "%s run -q %s", self_path, tmp_path);
+            char cmd[2048];
+            sprintf(cmd, "%s run -q %s", self_path, tmp_path);
 
-        int ret = system(cmd);
-        printf("\n");
+            int ret = system(cmd);
+            printf("\n");
 
-        if (0 != ret)
-        {
-            free(history[--history_len]);
-        }
-    }
-
-    if (history_path[0])
-    {
-        FILE *hf = fopen(history_path, "w");
-        if (hf)
-        {
-            int start = history_len > 1000 ? history_len - 1000 : 0;
-            for (int i = start; i < history_len; i++)
+            if (0 != ret)
             {
-                fprintf(hf, "%s\n", history[i]);
+                free(history[--history_len]);
             }
-            fclose(hf);
         }
-    }
 
-    if (history)
-    {
-        for (int i = 0; i < history_len; i++)
+        if (history_path[0])
         {
-            free(history[i]);
+            FILE *hf = fopen(history_path, "w");
+            if (hf)
+            {
+                int start = history_len > 1000 ? history_len - 1000 : 0;
+                for (int i = start; i < history_len; i++)
+                {
+                    fprintf(hf, "%s\n", history[i]);
+                }
+                fclose(hf);
+            }
         }
-        free(history);
-    }
-    if (input_buffer)
-    {
-        free(input_buffer);
+
+        if (history)
+        {
+            for (int i = 0; i < history_len; i++)
+            {
+                free(history[i]);
+            }
+            free(history);
+        }
+        if (input_buffer)
+        {
+            free(input_buffer);
+        }
     }
 }
