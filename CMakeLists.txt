@@ -123,7 +123,9 @@ foreach(plugin ${PLUGIN_NAMES})
         SUFFIX ${PLUGIN_EXT}
         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/plugins
     )
-    target_compile_options(${plugin}_plugin PRIVATE ${SHARED_FLAGS})
+    if(NOT "${SHARED_FLAGS}" STREQUAL "")
+        target_compile_options(${plugin}_plugin PRIVATE ${SHARED_FLAGS})
+    endif()
 endforeach()
 
 # --- Install Rules ---
