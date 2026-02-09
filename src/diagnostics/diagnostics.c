@@ -335,7 +335,7 @@ void zpanic_with_hints(Token t, const char *msg, const char *const *hints)
 
         if (g_parser_ctx && g_parser_ctx->is_fault_tolerant && g_parser_ctx->on_error)
         {
-            char full_msg[4096];
+            char full_msg[8192];
             snprintf(full_msg, sizeof(full_msg), "%s\n%s", msg, combined_hints);
             g_parser_ctx->on_error(g_parser_ctx->error_callback_data, t, full_msg);
             return;
@@ -383,7 +383,7 @@ void zpanic_with_hints(Token t, const char *msg, const char *const *hints)
     if (g_parser_ctx && g_parser_ctx->is_fault_tolerant && g_parser_ctx->on_error)
     {
         // Construct error message buffer
-        char full_msg[4096];
+        char full_msg[8192];
         char combined_hints[2048] = {0};
         if (hints)
         {
@@ -397,7 +397,6 @@ void zpanic_with_hints(Token t, const char *msg, const char *const *hints)
             }
         }
         // Construct error message buffer
-        // char full_msg[4096]; // Removed redeclaration
         int header_len = snprintf(full_msg, sizeof(full_msg), "%s", msg);
         if (header_len < (int)sizeof(full_msg))
         {
@@ -556,7 +555,7 @@ void zerror_with_hints(Token t, const char *msg, const char *const *hints)
         emit_json("error", t, msg, combined_hints[0] ? combined_hints : NULL);
         if (g_parser_ctx && g_parser_ctx->on_error)
         {
-            char full_msg[4096];
+            char full_msg[8192];
             int header_len = snprintf(full_msg, sizeof(full_msg), "%s\n", msg);
             if (header_len < (int)sizeof(full_msg))
             {
@@ -610,7 +609,7 @@ void zerror_with_hints(Token t, const char *msg, const char *const *hints)
     if (g_parser_ctx && g_parser_ctx->on_error)
     {
         // Construct error message buffer
-        char full_msg[4096];
+        char full_msg[8192];
         int header_len = snprintf(full_msg, sizeof(full_msg), "%s", msg);
         if (header_len < (int)sizeof(full_msg))
         {
