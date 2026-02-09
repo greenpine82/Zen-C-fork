@@ -878,28 +878,34 @@ ASTNode *parse_def(ParserContext *ctx, Lexer *l)
         else
         {
             i = parse_expression(ctx, l);
-            
+
             // Try to evaluate constant expression for symbol table
             long long val;
             if (eval_const_int_expr(i, ctx, &val))
             {
-                 ZenSymbol *s = find_symbol_entry(ctx, ns);
-                 if (s)
-                 {
-                     s->is_const_value = 1;
-                     s->const_int_val = (int)val;
-                     s->is_def = 1;
-                     
-                     // Auto-infer type for def if unknown
-                     if (!s->type_name || strcmp(s->type_name, "unknown") == 0)
-                     {
-                        if (s->type_name) free(s->type_name);
+                ZenSymbol *s = find_symbol_entry(ctx, ns);
+                if (s)
+                {
+                    s->is_const_value = 1;
+                    s->const_int_val = (int)val;
+                    s->is_def = 1;
+
+                    // Auto-infer type for def if unknown
+                    if (!s->type_name || strcmp(s->type_name, "unknown") == 0)
+                    {
+                        if (s->type_name)
+                        {
+                            free(s->type_name);
+                        }
                         s->type_name = xstrdup("int");
-                        if (s->type_info) free(s->type_info);
+                        if (s->type_info)
+                        {
+                            free(s->type_info);
+                        }
                         s->type_info = type_new(TYPE_INT);
                         s->type_info->is_const = 1;
-                     }
-                 }
+                    }
+                }
             }
         }
     }

@@ -10,7 +10,7 @@ void try_parse_macro_const(ParserContext *ctx, const char *content)
     lexer_init(&l, content);
     l.emit_comments = 0;
 
-    Token t = lexer_next(&l);
+    lexer_next(&l); // Skip start
 
     // Manual skip of #
     const char *p = content;
@@ -87,6 +87,12 @@ void try_parse_macro_const(ParserContext *ctx, const char *content)
     if (balance != 0)
     {
         return; // Unbalanced
+    }
+
+    // Ensure we have something to parse
+    if (lexer_peek(&l).type == TOK_EOF)
+    {
+        return;
     }
 
     // Try parse expression
