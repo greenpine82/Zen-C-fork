@@ -3035,8 +3035,117 @@ ASTNode *parse_primary(ParserContext *ctx, Lexer *l)
             node->call.args = head;
             node->call.arg_names = has_named ? arg_names : NULL;
             node->call.arg_count = args_provided;
-            // Unknown return type - let codegen infer it
-            node->resolved_type = xstrdup("unknown");
+
+            GenericFuncTemplate *tpl = find_func_template(ctx, acc);
+            if (tpl && tpl->func_node && args_provided > 0 && head)
+            {
+                char *inferred_type = NULL;
+                ASTNode *func_node = tpl->func_node;
+                char *gen_param = tpl->generic_param;
+
+                if (func_node->func.arg_types && gen_param && !strchr(gen_param, ','))
+                {
+                    ASTNode *actual_arg = head;
+                    for (int i = 0; i < func_node->func.arg_count && actual_arg; i++)
+                    {
+                        Type *formal = func_node->func.arg_types[i];
+                        if (!formal)
+                        {
+                            actual_arg = actual_arg->next;
+                            continue;
+                        }
+
+                        Type *actual_type = actual_arg->type_info;
+                        if (!actual_type && actual_arg->type == NODE_EXPR_VAR)
+                        {
+                            actual_type = find_symbol_type_info(ctx, actual_arg->var_ref.name);
+                        }
+                        if (!actual_type)
+                        {
+                            actual_arg = actual_arg->next;
+                            continue;
+                        }
+
+                        if (formal->kind == TYPE_STRUCT && formal->name &&
+                            strcmp(formal->name, gen_param) == 0)
+                        {
+                            inferred_type = type_to_string(actual_type);
+                            break;
+                        }
+
+                        if (formal->kind == TYPE_ARRAY && formal->inner &&
+                            formal->inner->kind == TYPE_STRUCT && formal->inner->name &&
+                            strcmp(formal->inner->name, gen_param) == 0)
+                        {
+                            if (actual_type->kind == TYPE_ARRAY && actual_type->inner)
+                            {
+                                inferred_type = type_to_string(actual_type->inner);
+                            }
+                            break;
+                        }
+
+                        if (formal->kind == TYPE_POINTER && formal->inner &&
+                            formal->inner->kind == TYPE_STRUCT && formal->inner->name &&
+                            strcmp(formal->inner->name, gen_param) == 0)
+                        {
+                            if (actual_type->kind == TYPE_POINTER && actual_type->inner)
+                            {
+                                inferred_type = type_to_string(actual_type->inner);
+                            }
+                            break;
+                        }
+
+                        actual_arg = actual_arg->next;
+                    }
+                }
+
+                if (inferred_type)
+                {
+                    char *mangled =
+                        instantiate_function_template(ctx, acc, inferred_type, inferred_type);
+                    if (mangled)
+                    {
+                        // Rewrite the callee to point to the instantiated function
+                        free(callee->var_ref.name);
+                        callee->var_ref.name = mangled;
+
+                        // Update type info from the newly registered FuncSig
+                        FuncSig *inst_sig = find_func(ctx, mangled);
+                        if (inst_sig)
+                        {
+                            node->definition_token = inst_sig->decl_token;
+                            if (inst_sig->ret_type)
+                            {
+                                node->type_info = inst_sig->ret_type;
+                                node->resolved_type = type_to_string(inst_sig->ret_type);
+                            }
+                            else
+                            {
+                                node->resolved_type = xstrdup("void");
+                            }
+                        }
+                        else
+                        {
+                            node->resolved_type = xstrdup("unknown");
+                        }
+                    }
+                    else
+                    {
+                        node->resolved_type = xstrdup("unknown");
+                    }
+                    free(inferred_type);
+                }
+                else
+                {
+                    // Could not infer type - leave as unknown
+                    node->resolved_type = xstrdup("unknown");
+                }
+            }
+            else
+            {
+                // Unknown return type - let codegen infer it
+                node->resolved_type = xstrdup("unknown");
+            }
             // Fall through to Postfix
         }
         else
@@ -3075,8 +3184,6 @@ ASTNode *parse_primary(ParserContext *ctx, Lexer *l)
                 else
                 {
                     node->resolved_type = xstrdup("unknown");
-                    // If the symbol exists (but type is unknown) OR suppression is requested, don't
-                    // fallback to suggestion
                     if (sym || should_suppress_undef_warning(ctx, acc))
                     {
                         node->var_ref.suggestion = NULL;
@@ -5112,19 +5219,119 @@ ASTNode *parse_expr_prec(ParserContext *ctx, Lexer *l, Precedence min_prec)
 
                 if (struct_name)
                 {
-                    char mangled[256];
-                    sprintf(mangled, "%s__get", struct_name);
+                    char mangled_index[256];
+                    sprintf(mangled_index, "%s__index", struct_name);
 
-                    if (find_func(ctx, mangled))
+                    char mangled_get[256];
+                    sprintf(mangled_get, "%s__get", struct_name);
+
+                    FuncSig *sig = find_func(ctx, mangled_index);
+                    char *resolved_name = NULL;
+                    char *method_name = "index";
+
+                    if (sig)
+                    {
+                        resolved_name = mangled_index;
+                    }
+                    else
+                    {
+                        sig = find_func(ctx, mangled_get);
+                        if (sig)
+                        {
+                            resolved_name = mangled_get;
+                            method_name = "get";
+                        }
+                    }
+
+                    // Fallback for Generics (e.g. Vec<T> -> Vec)
+                    int is_generic_template = 0;
+                    if (!sig && strchr(struct_name, '<'))
+                    {
+                        char base[256];
+                        size_t len = strcspn(struct_name, "<");
+                        if (len < 255)
+                        {
+                            strncpy(base, struct_name, len);
+                            base[len] = 0;
+
+                            GenericImplTemplate *it = ctx->impl_templates;
+                            while (it)
+                            {
+                                if (strcmp(it->struct_name, base) == 0)
+                                {
+                                    ASTNode *m = it->impl_node->impl.methods;
+                                    size_t base_len = strlen(base);
+                                    char *mangled_idx = xmalloc(base_len + 8);
+                                    sprintf(mangled_idx, "%s__index", base);
+                                    char *mangled_g = xmalloc(base_len + 6);
+                                    sprintf(mangled_g, "%s__get", base);
+
+                                    while (m)
+                                    {
+                                        int found_idx =
+                                            m->func.name && strcmp(m->func.name, mangled_idx) == 0;
+                                        int found_get =
+                                            m->func.name && strcmp(m->func.name, mangled_g) == 0;
+
+                                        if (found_idx || found_get)
+                                        {
+                                            if (found_idx)
+                                            {
+                                                method_name = "index";
+                                            }
+                                            else
+                                            {
+                                                method_name = "get";
+                                            }
+
+                                            is_generic_template = 1;
+
+                                            // Construct temporary signature for checking
+                                            sig = xmalloc(sizeof(FuncSig));
+                                            memset(sig, 0, sizeof(FuncSig));
+                                            sig->ret_type = m->func.ret_type_info;
+                                            sig->arg_types = m->func.arg_types;
+                                            sig->total_args = m->func.arg_count;
+
+                                            break;
+                                        }
+                                        m = m->next;
+                                    }
+                                }
+                                if (is_generic_template)
+                                {
+                                    break;
+                                }
+                                it = it->next;
+                            }
+                        }
+                    }
+
+                    if (sig)
                     {
                         // Rewrite to Call
                         ASTNode *call = ast_create(NODE_EXPR_CALL);
-                        ASTNode *callee = ast_create(NODE_EXPR_VAR);
-                        callee->var_ref.name = xstrdup(mangled);
+                        ASTNode *callee;
+
+                        if (is_generic_template)
+                        {
+                            // For generics, keep it as a Member access so instantiation
+                            // can re-resolve the correct concrete function name.
+                            callee = ast_create(NODE_EXPR_MEMBER);
+                            callee->member.target = lhs;
+                            callee->member.field = xstrdup(method_name);
+                            callee->member.is_pointer_access = is_ptr;
+                            // Just a hint, logic below handles adjustments
+                        }
+                        else
+                        {
+                            callee = ast_create(NODE_EXPR_VAR);
+                            callee->var_ref.name = xstrdup(resolved_name);
+                        }
+
                         call->call.callee = callee;
 
                         ASTNode *self_arg = lhs;
-                        FuncSig *sig = find_func(ctx, mangled);
 
                         // Pointer adjustment logic
                         if (sig->total_args > 0 && sig->arg_types[0]->kind == TYPE_POINTER &&
@@ -5147,10 +5354,38 @@ ASTNode *parse_expr_prec(ParserContext *ctx, Lexer *l, Precedence min_prec)
                             self_arg = deref;
                         }
 
-                        self_arg->next = start;
-                        call->call.args = self_arg;
+                        // If using MEMBER access, we don't pass self as argument in AST
+                        // because codegen/semant handles "obj.method(args)" by injecting obj.
+                        // BUT here we are manually constructing the call.
+                        // If we use MEMBER, we should NOT put self in args?
+                        // standard parser produces: Call(Member, args). Member has target=obj.
+
+                        if (is_generic_template)
+                        {
+                            // Update target of member to be the adjusted self?
+                            // Member access usually expects the object as 'target'.
+                            // If we adjusted it (e.g. &obj), then target should be &obj.
+                            callee->member.target = self_arg;
+
+                            // And we DO NOT add self to call.args
+                            call->call.args = start;
+                        }
+                        else
+                        {
+                            // For VAR call (direct function call), we MUST pass self as first arg.
+                            self_arg->next = start;
+                            call->call.args = self_arg;
+                        }
+
                         call->type_info = sig->ret_type;
-                        call->resolved_type = type_to_string(sig->ret_type);
+                        if (call->type_info)
+                        {
+                            call->resolved_type = type_to_string(sig->ret_type);
+                        }
+                        else
+                        {
+                            call->resolved_type = xstrdup("unknown");
+                        }
 
                         lhs = call;
                         continue;

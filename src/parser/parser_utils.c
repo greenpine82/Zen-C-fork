@@ -2617,9 +2617,21 @@ char *instantiate_function_template(ParserContext *ctx, const char *name, const 
         return NULL;
     }
 
-    // Scan the function body for sizeof expressions and trigger instantiation
-    // of any generic structs or functions referenced there
     trigger_instantiations(ctx, new_fn->func.body);
+
+    if (new_fn->func.arg_types)
+    {
+        for (int i = 0; i < new_fn->func.arg_count; i++)
+        {
+            Type *at = new_fn->func.arg_types[i];
+            if (at && at->kind == TYPE_ARRAY && at->array_size == 0 && at->inner)
+            {
+                char *inner_str = type_to_string(at->inner);
+                register_slice(ctx, inner_str);
+                free(inner_str);
+            }
+        }
+    }
 
     free(new_fn->func.name);
     new_fn->func.name = xstrdup(mangled);
