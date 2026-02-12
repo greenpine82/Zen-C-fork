@@ -30,7 +30,7 @@ void print_version()
 
 void print_usage()
 {
-    printf("Usage: zc [command] [options] <file.zc>\n");
+    printf("Usage: zc [command] [options] <file.zc> [extra files...]\n");
     printf("Commands:\n");
     printf("  run     Compile and run the program\n");
     printf("  build   Compile to executable\n");
@@ -243,10 +243,9 @@ int main(int argc, char **argv)
             {
                 g_config.input_file = arg;
             }
-            else
+            else if (g_config.extra_file_count < 64)
             {
-                printf("Multiple input files not supported yet.\n");
-                return 1;
+                g_config.extra_files[g_config.extra_file_count++] = arg;
             }
         }
     }
@@ -310,6 +309,73 @@ int main(int argc, char **argv)
     {
         // Parse failed
         return 1;
+    }
+
+    // Parse extra input files and merge into AST
+    if (g_config.extra_file_count > 0)
+    {
+        // Mark primary file as imported to prevent re-parsing
+        char *primary_real = realpath(g_config.input_file, NULL);
+        if (primary_real)
+        {
+            mark_file_imported(&ctx, primary_real);
+            free(primary_real);
+        }
+
+        for (int ef = 0; ef < g_config.extra_file_count; ef++)
+        {
+            const char *extra_path = g_config.extra_files[ef];
+            char *real_path = realpath(extra_path, NULL);
+            const char *path = real_path ? real_path : extra_path;
+
+            if (is_file_imported(&ctx, path))
+            {
+                if (real_path)
+                {
+                    free(real_path);
+                }
+                continue;
+            }
+            mark_file_imported(&ctx, path);
+
+            char *extra_src = load_file(path);
+            if (!extra_src)
+            {
+                printf("Error: Could not read file %s\n", extra_path);
+                return 1;
+            }
+
+            if (!g_config.quiet)
+            {
+                printf(COLOR_BOLD COLOR_GREEN "   Compiling" COLOR_RESET " %s\n", extra_path);
+                fflush(stdout);
+            }
+
+            const char *saved_fn = g_current_filename;
+            g_current_filename = (char *)path;
+
+            scan_build_directives(&ctx, extra_src);
+
+            Lexer extra_l;
+            lexer_init(&extra_l, extra_src);
+            ASTNode *extra_root = parse_program_nodes(&ctx, &extra_l);
+            g_current_filename = (char *)saved_fn;
+
+            if (extra_root)
+            {
+                ASTNode *tail = root;
+                while (tail->next)
+                {
+                    tail = tail->next;
+                }
+                tail->next = extra_root;
+            }
+
+            if (real_path)
+            {
+                free(real_path);
+            }
+        }
     }
 
     if (!validate_types(&ctx))

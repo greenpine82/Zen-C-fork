@@ -216,8 +216,10 @@ int levenshtein(const char *s1, const char *s2);
  */
 typedef struct
 {
-    char *input_file;  ///< Input source file path.
-    char *output_file; ///< Output binary file path.
+    char *input_file;      ///< Input source file path.
+    char *extra_files[64]; ///< Additional input files.
+    int extra_file_count;  ///< Number of extra input files.
+    char *output_file;     ///< Output binary file path.
 
     // Modes.
     int mode_run;        ///< 1 if 'run' command (compile & execute).

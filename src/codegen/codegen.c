@@ -992,7 +992,7 @@ void codegen_expression(ParserContext *ctx, ASTNode *node, FILE *out)
         {
             char *base_type = infer_type(ctx, node->index.array);
             char *struct_name = NULL;
-            char method_name[256] = {0};
+            char method_name[512] = {0};
 
             if (base_type && !strchr(base_type, '*'))
             {
