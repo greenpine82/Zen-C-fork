@@ -220,7 +220,7 @@ test: $(TARGET) $(PLUGINS)
 	./tests/scripts/run_example_transpile.sh
 
 test-tcc: $(TARGET) $(PLUGINS)
-	./tests/scripts/run_tests.sh --cc tcc
+	./tests/scripts/run_tests.sh --cc tcc -Istd/third-party/tre/include -Istd obj/std/third-party/tre/lib/*.o
 
 test-lsp: $(TARGET)
 	@echo "=> Building LSP Test Runner"

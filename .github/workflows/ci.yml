@@ -74,7 +74,7 @@ jobs:
         fi
 
     - name: Run Tests
-      run: ./tests/scripts/run_tests.sh --cc "${{ matrix.cc }}"
+      run: ./tests/scripts/run_tests.sh --cc "${{ matrix.cc }}" -Istd/third-party/tre/include -Istd obj/std/third-party/tre/lib/*.o
 
   ape:
     name: Build APE
