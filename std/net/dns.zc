@@ -16,6 +16,9 @@ import "../core.zc"
 import "../result.zc"
 import "../string.zc"
 import "../vec.zc"
+import "./socket.zc"
+
+extern fn _z_net_ensure_init() -> void;
 
 // Helper struct for getaddrinfo results
 struct Dns {
@@ -32,6 +35,7 @@ raw {
     };
 
     static int _z_dns_resolve(const char* host, char* out_buf, size_t out_len) {
+        _z_net_ensure_init();
         struct addrinfo hints;
         struct addrinfo *result, *rp;
         

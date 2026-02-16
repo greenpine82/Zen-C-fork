@@ -28,17 +28,20 @@ extern fn _z_socket(domain: c_int, type: c_int, proto: c_int) -> isize;
 extern fn _z_close(fd: isize) -> c_int;
 extern fn _z_read(fd: isize, buf: void*, count: usize) -> isize; 
 extern fn strerror(errnum: c_int) -> char*;
+extern fn _z_net_ensure_init() -> void;
 
 raw {
 #ifdef _WIN32
-    static int _z_net_initialized = 0;
-    static void _z_net_ensure_init(void) {
+    int _z_net_initialized = 0;
+    void _z_net_ensure_init(void) {
         if (!_z_net_initialized) {
             WSADATA wsaData;
             WSAStartup(MAKEWORD(2, 2), &wsaData);
             _z_net_initialized = 1;
         }
     }
+#else
+    void _z_net_ensure_init(void) {}
 #endif
 
     static ssize_t _z_socket(int domain, int type, int proto) {
